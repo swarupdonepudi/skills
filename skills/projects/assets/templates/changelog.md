@@ -1,6 +1,7 @@
 ---
 date: "$date"
 session: $session
+progress: "$progress"
 tags: [$tags]
 summary: >
   $summary

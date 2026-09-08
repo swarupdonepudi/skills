@@ -46,7 +46,7 @@ It drafts the brief from the conversation, asks only for what it cannot infer, c
 
 > Wrap up.
 
-It updates the project's state, writes the session's changelog, and commits the records. Tomorrow, in a fresh conversation, drag the project's `next.md` in. The agent becomes the project's owner, checks the checkout is current, reads every changelog silently, tells you where things stand, offers two or three options, and waits. No re-explaining.
+It ticks the done-when items you met, updates the project's state, writes the session's changelog, copies the plan, and commits with a proper message. Tomorrow, in a fresh conversation, drag the project's `next.md` in. The agent becomes the project's owner, checks the checkout is current, reads every changelog silently, tells you where things stand ("3 of 7 done, about 43%"), offers three options with one recommended, and waits for your pick. Then it plans, and the plan's last step is always the wrap-up, so you can approve and walk away; when you come back the work is committed. No re-explaining.
 
 When the work is done:
 

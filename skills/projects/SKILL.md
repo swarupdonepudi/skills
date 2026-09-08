@@ -1,6 +1,6 @@
 ---
 name: projects
-description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md (or legacy next-task.md) from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
+description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
 license: MIT
 metadata:
   author: swarupdonepudi
@@ -28,7 +28,7 @@ Inside a project, six files, each with one job, nothing written twice:
 
 | File | Job | Written by |
 |---|---|---|
-| `README.md` | The **brief**: goal, done-when, scope, repositories, owner, sub-project table, lifecycle banner | `new`, then the agent as the brief sharpens |
+| `README.md` | The **brief**: goal, done-when checklist (progress is its ticked count), scope, repositories, owner, sub-project table, lifecycle banner | `new`, then the agent as the brief sharpens and items are met |
 | `next.md` | The **state**: rules of engagement, current status, active plan, next-session focus, open questions, one-line session log | `new`; the agent at wrap-up |
 | `plans/NNN-slug.md` | The **intent**: the plan executed against, `status:` in frontmatter | The agent, before executing |
 | `changelogs/NNN-slug.md` | The **history**: what was done, decided, and left pending. One per session, mandatory | The agent at wrap-up |
@@ -48,8 +48,8 @@ An adopter shapes how you work on their projects by writing `_projects/owners/de
 | The user | You | Read |
 |---|---|---|
 | Starts work that will span sessions; "start a project" | Draft the brief from the conversation, confirm it, run `new`, write `plans/001`, get it approved, stop | [references/start.md](references/start.md) |
-| Drags `next.md` in; "resume X"; "continue the project" | Follow the file's rules of engagement exactly: become the owner, check the checkout, read silently, present status, offer options, wait | [references/resume.md](references/resume.md) |
-| "wrap up"; "end the session"; the work for today is done | Update `next.md`, write the changelog, set plan statuses, run the knowledge check, run `refresh`, commit the records | [references/wrap-up.md](references/wrap-up.md) |
+| Drags `next.md` in; "resume X"; "continue the project" | Follow the file's rules of engagement exactly: become the owner, check the checkout, read silently, present status with progress, offer three options, wait for the pick, plan (host plan mode if there is one) with the wrap-up as the last step, execute to the commit | [references/resume.md](references/resume.md) |
+| "wrap up"; the plan's final step; the work for today is done | Tick met done-when items, update `next.md`, write the changelog, copy every plan from this session, run the knowledge check, run `refresh`, commit with a conventional message | [references/wrap-up.md](references/wrap-up.md) |
 | "complete", "pause", "put on hold", "shelve", "reactivate" | Confirm the reason (and resume condition for hold), run `move`, report | [references/lifecycle.md](references/lifecycle.md) |
 | A piece of the project is big enough to run on its own | Propose a sub-project; run `new --parent` | [references/sub-projects.md](references/sub-projects.md) |
 | Something worth remembering surfaces mid-session | Ask before writing to `decisions/` or `learnings/` | [references/knowledge.md](references/knowledge.md) |
@@ -72,16 +72,18 @@ projects.py selftest
 
 - `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent.
 - `move` works between any two states. It moves the folder, sets or clears the status banner in the brief and `next.md`, updates the sub-project's row in its parent, and repairs every reference in `_projects/`: repo-relative paths by boundary-safe literal replacement, relative links by recomputing where they pointed. It refuses to archive a project with active sub-projects unless `--force`. `--dry-run` prints every change and writes nothing. Requires `--reason` for on-hold and shelved, `--resume-when` for on-hold.
-- `list` shows active projects stalest first with owner, created, last activity (newest changelog), and idle days; `--all` adds the lifecycle folders; `--json` for you.
-- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template, so every project runs the current protocol. Legacy files without marker blocks are reported and left alone. Wrap-up runs it on the current project.
+- `list` shows active projects stalest first with owner, progress (ticked done-when items over total), last activity (newest changelog), and idle days; `--all` adds the lifecycle folders; `--json` for you.
+- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template, so every project runs the current protocol. Wrap-up runs it on the current project.
 
-The CLI accepts projects created by earlier versions of this framework (`next-task.md`, `- **Parent**: x`, no marker blocks) without renaming or rewriting anything it did not create.
+The CLI rewrites only what it owns: the text inside its marker blocks and the paths a move invalidates. A folder without the marker blocks was not created by this skill; `move` and `refresh` say so and stop.
 
 ## Rules that never bend
 
-- **Never start work on resume.** Read, present status, offer options, wait. Even when the next step is obvious.
-- **Every session ends with a changelog.** Short sessions get short changelogs; no session gets none.
-- **Plan before executing.** Write the plan into `plans/`, get it approved, then act. A plan is a map: re-verify what it cites against the code before building on it.
+- **Never start work on resume.** Read, present status with progress, offer exactly three options, wait for the pick. Even when the next step is obvious.
+- **Every plan ends with the wrap-up.** Plan in the host's plan mode when it has one; the last step is always the full wrap-up and a conventional commit. Approving the plan approves the session; run it to the commit hash.
+- **Every session ends with a changelog, and every plan is kept.** Short sessions get short changelogs; no session gets none. Every plan created this session is copied into `plans/`.
+- **Progress is derived, never stored.** It is the count of ticked items under `## Done when` in the brief. Tick a box when an item is met; state the count at both ends of the session; never write a percentage anywhere else.
+- **Plan before executing.** Get the plan approved, then act. A plan is a map: re-verify what it cites against the code before building on it.
 - **`next.md` is state, changelogs are history.** Never paste a session narrative into `next.md`; one line in the session log, the detail in the changelog.
 - **Knowledge folders are sparse.** Ask before writing to `decisions/` or `learnings/`. The bar: high impact, still true in a month, non-obvious, reusable.
 - **Project scaffolding never leaks.** No project name, `_projects/` path, plan or decision number in source code, comments, or durable documentation. Grep the diff before finishing.

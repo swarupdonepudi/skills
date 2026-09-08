@@ -21,11 +21,13 @@ that ground in every file. One surface, one `--help`, one place to fix a bug.
 
 Design notes that matter when changing this file:
 
-* The CLI never assumes the new layout. Projects created by earlier versions
-  of the framework (a `next-task.md` resume file, a `- **Parent**: x` line,
-  no marker blocks) are read correctly and moved correctly. Nothing here
-  renames or rewrites a file it did not create, except inside the marker
-  blocks it owns.
+* The CLI owns exactly two things inside a project's files: the text between
+  the marker blocks it wrote (rules of engagement, status banner) and the
+  paths and links a move invalidates. Everything else in a project is the
+  agent's and the human's. A folder without the marker blocks is not a
+  project this skill manages; the CLI says so and stops rather than guess.
+* Progress is derived, never stored: the count of ticked boxes under
+  `## Done when` in the brief. `list` computes it; nothing writes it.
 * Markdown templates are rendered with `string.Template` (`$var`), never
   `str.format`, so braces in markdown are safe.
 * Link repair on a move is computed from the geometry of the tree, not from
@@ -69,10 +71,7 @@ STATES: Dict[str, str] = {
 }
 STATUS_WORDS = {"active": "Active", "completed": "Completed", "on-hold": "On hold", "shelved": "Shelved"}
 
-# The resume file. `next.md` is current; `next-task.md` is what earlier
-# versions of the framework wrote and is accepted everywhere.
-RESUME_FILES = ("next.md", "next-task.md")
-
+RESUME_FILE = "next.md"
 OWNERS_DIR = "owners"
 
 FOLDER_NAME = re.compile(r"^(?P<date>\d{8})\.(?P<seq>\d{2})\.(?P<sp>sp\.)?(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$")
@@ -82,14 +81,13 @@ SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 ROE_START, ROE_END = "<!-- projects:roe:start -->", "<!-- projects:roe:end -->"
 STATUS_START, STATUS_END = "<!-- projects:status:start -->", "<!-- projects:status:end -->"
 
-# `**Owner:** name` in the brief. Also accepts the older `**Owner**: name`.
-OWNER_LINE = re.compile(r"^(?:-\s*)?\*\*Owner(?::\*\*|\*\*:)\s*(?P<name>[A-Za-z0-9._-]+)", re.MULTILINE)
-# `**Parent:** [folder](../folder/)` in the brief; also the legacy
-# `- **Parent**: folder` written by the earlier bootstrap scripts.
-PARENT_LINE = re.compile(
-    r"^(?:-\s*)?\*\*Parent(?::\*\*|\*\*:)\s*(?:\[(?P<linked>[^\]]+)\]\([^)]*\)|(?P<bare>\S+))",
-    re.MULTILINE,
-)
+# The two identity lines in the brief that the CLI reads. `new` writes them as
+# list items; keep the form when editing a brief by hand.
+OWNER_LINE = re.compile(r"^- \*\*Owner:\*\*\s*(?P<name>[A-Za-z0-9._-]+)", re.MULTILINE)
+PARENT_LINE = re.compile(r"^- \*\*Parent:\*\*\s*\[(?P<folder>[^\]]+)\]\([^)]*\)", re.MULTILINE)
+
+# A done-when item: `- [ ] text` or `- [x] text` under `## Done when`.
+CHECKBOX = re.compile(r"^- \[(?P<mark>[ xX])\] ", re.MULTILINE)
 
 MARKDOWN_LINK = re.compile(r"\]\((?P<target>[^)\s]+)\)")
 FRONTMATTER_DATE = re.compile(r"^date:\s*[\"']?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
@@ -157,18 +155,9 @@ def replace_between(text: str, start: str, end: str, replacement: str) -> Option
     return text[: start_idx + len(start)] + inner + text[end_idx:]
 
 
-def insert_after_heading(text: str, block: str) -> str:
-    """Insert a block after the first H1 (or at the top when there is none)."""
-    lines = text.splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if line.startswith("# "):
-            return "".join(lines[: index + 1]) + "\n" + block + "\n\n" + "".join(lines[index + 1:]).lstrip("\n")
-    return block + "\n\n" + text
-
-
-def bullets(items: Iterable[str], default: str) -> str:
+def bullets(items: Iterable[str], default: str, prefix: str = "- ") -> str:
     cleaned = [item.strip() for item in items if item.strip()]
-    return "\n".join(f"- {item}" for item in cleaned) if cleaned else default
+    return "\n".join(f"{prefix}{item}" for item in cleaned) if cleaned else default
 
 
 def section_body(text: str, heading: str) -> Optional[str]:
@@ -241,26 +230,25 @@ class Project:
         return self.path / "README.md"
 
     @property
-    def resume_file(self) -> Optional[Path]:
-        for name in RESUME_FILES:
-            candidate = self.path / name
-            if candidate.is_file():
-                return candidate
-        return None
+    def resume_file(self) -> Path:
+        return self.path / RESUME_FILE
 
     @property
     def owner(self) -> Optional[str]:
-        text = read_text(self.readme) or ""
-        match = OWNER_LINE.search(text)
+        match = OWNER_LINE.search(read_text(self.readme) or "")
         return match.group("name") if match else None
 
     @property
     def parent_folder(self) -> Optional[str]:
-        text = read_text(self.readme) or ""
-        match = PARENT_LINE.search(text)
-        if not match:
-            return None
-        return (match.group("linked") or match.group("bare") or "").strip().strip("`").rstrip("/")
+        match = PARENT_LINE.search(read_text(self.readme) or "")
+        return match.group("folder").strip() if match else None
+
+    @property
+    def progress(self) -> Tuple[int, int]:
+        """(ticked, total) done-when items. The brief is the only source."""
+        body = section_body(read_text(self.readme) or "", "Done when") or ""
+        marks = [m.group("mark") for m in CHECKBOX.finditer(body)]
+        return sum(1 for mark in marks if mark != " "), len(marks)
 
     @property
     def last_activity(self) -> Optional[date]:
@@ -420,7 +408,7 @@ def cmd_new(args: argparse.Namespace) -> None:
         identity_lines=identity_lines,
         date=today(),
         goal=args.goal.strip(),
-        done=bullets((args.done or "").split(","), "- Define with the human before approving the first plan."),
+        done=bullets((args.done or "").split(","), "- [ ] Define with the human before approving the first plan.", prefix="- [ ] "),
         scope=args.scope.strip() if args.scope else "- Define with the human before approving the first plan.",
         repositories=repositories,
     ), encoding="utf-8")
@@ -474,12 +462,10 @@ def _register_sub_project_with_parent(parent: Project, sub: Project, description
         row = f"| [{sub.folder}](../{sub.folder}/) | Active | {description} |"
         parent.readme.write_text(_append_table_row(readme_text, "Sub-projects", "| Sub-project | Status | Description |\n|---|---|---|", row), encoding="utf-8")
 
-    resume = parent.resume_file
-    resume_text = read_text(resume) if resume else None
-    if resume and resume_text is not None:
-        entry = f"- `{sub.rel}/next.md`: {description}"
-        parent_resume = _append_to_section(resume_text, "Sub-projects", entry)
-        resume.write_text(parent_resume, encoding="utf-8")
+    resume_text = read_text(parent.resume_file)
+    if resume_text is not None:
+        entry = f"- `{sub.rel}/{RESUME_FILE}`: {description}"
+        parent.resume_file.write_text(_append_to_section(resume_text, "Sub-projects", entry), encoding="utf-8")
 
 
 def _append_table_row(text: str, heading: str, table_header: str, row: str) -> str:
@@ -565,8 +551,17 @@ def cmd_move(args: argparse.Namespace) -> None:
     new_abs = workspace.state_dir(args.to) / project.folder
     if new_abs.exists():
         fail(f"target already exists: {new_abs}")
+    for name in ("README.md", RESUME_FILE):
+        text = read_text(old_abs / name)
+        if text is None or STATUS_START not in text or STATUS_END not in text:
+            fail(f"{project.folder}/{name} has no status marker block; this folder was not created by the projects skill")
 
     edits = _plan_move_edits(workspace, project, old_abs, new_abs, args)
+
+    if args.to == "completed":
+        ticked, total = project.progress
+        if total and ticked < total:
+            print(f"note: {total - ticked} of {total} done-when items are still unticked in README.md")
 
     verb = "would move" if args.dry_run else "moving"
     print(f"{verb} {posix(old_abs.relative_to(workspace.repo_root))} -> {posix(new_abs.relative_to(workspace.repo_root))}")
@@ -637,10 +632,8 @@ def _plan_move_edits(workspace: Workspace, project: Project, old_abs: Path, new_
     # The banner in the moved project's brief and resume file. These files may
     # already be in `edits` from the link pass; fold the banner into that edit.
     banner = _status_banner(args)
-    for name in ("README.md", *RESUME_FILES):
+    for name in ("README.md", RESUME_FILE):
         current = old_abs / name
-        if not current.is_file():
-            continue
         final = final_path(current)
         existing = next((e for e in edits if e.path == final), None)
         text = existing.after if existing else (read_text(current) or "")
@@ -730,17 +723,14 @@ def _status_banner(args: argparse.Namespace) -> str:
 
 def _apply_banner(text: str, banner: str) -> Tuple[str, str]:
     replaced = replace_between(text, STATUS_START, STATUS_END, banner)
-    if replaced is not None:
-        # Keep a blank line after the block so the heading that follows renders
-        # as a heading; markdown treats a heading glued to a comment as prose.
-        end = replaced.find(STATUS_END) + len(STATUS_END)
-        if not replaced[end:].startswith("\n\n") and replaced[end:].strip():
-            replaced = replaced[:end] + "\n" + replaced[end:]
-        return replaced, ("banner set" if banner else "banner cleared")
-    if not banner:
-        return text, "no marker block (legacy file); any old banner left as is"
-    block = f"{STATUS_START}\n{banner}\n{STATUS_END}"
-    return insert_after_heading(text, block), "banner added (marker block inserted)"
+    if replaced is None:
+        fail("status marker block missing; `move` checks for it before planning, so this is a bug")
+    # Keep a blank line after the block so the heading that follows renders as
+    # a heading; markdown treats a heading glued to a comment as prose.
+    end = replaced.find(STATUS_END) + len(STATUS_END)
+    if not replaced[end:].startswith("\n\n") and replaced[end:].strip():
+        replaced = replaced[:end] + "\n" + replaced[end:]
+    return replaced, ("banner set" if banner else "banner cleared")
 
 
 def _update_table_status(text: str, folder: str, status: str) -> str:
@@ -773,6 +763,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         idle = (date.today() - last).days if last else None
         if args.stale is not None and (idle is None or idle < args.stale):
             continue
+        ticked, total = project.progress
         rows.append({
             "folder": project.folder,
             "state": project.state,
@@ -781,7 +772,10 @@ def cmd_list(args: argparse.Namespace) -> None:
             "created": project.created.isoformat() if project.created else "",
             "last_activity": last.isoformat() if last else "",
             "idle_days": idle,
-            "resume": posix(project.resume_file.relative_to(workspace.repo_root)) if project.resume_file else "",
+            "done_ticked": ticked,
+            "done_total": total,
+            "progress_percent": round(100 * ticked / total) if total else None,
+            "resume": posix(project.resume_file.relative_to(workspace.repo_root)),
         })
 
     counts = {state: len(workspace.projects([state])) for state in STATES}
@@ -803,7 +797,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 by_parent.setdefault(row["parent"], []).append(row)
             else:
                 top.append(row)
-        header = f"{'project':<52} {'state':<10} {'owner':<12} {'last activity':<14} idle"
+        header = f"{'project':<52} {'state':<10} {'owner':<12} {'progress':<12} {'last activity':<14} idle"
         print(header)
         print("-" * len(header))
         for row in top:
@@ -816,8 +810,9 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 def _print_row(row: dict, indent: str) -> None:
     idle = f"{row['idle_days']}d" if row["idle_days"] is not None else "-"
+    progress = f"{row['done_ticked']}/{row['done_total']} {row['progress_percent']}%" if row["done_total"] else "-"
     name = f"{indent}{row['folder']}"
-    print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {row['last_activity'] or '-':<14} {idle}")
+    print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {progress:<12} {row['last_activity'] or '-':<14} {idle}")
 
 
 # --------------------------------------------------------------------------
@@ -836,36 +831,46 @@ def cmd_refresh(args: argparse.Namespace) -> None:
             fail(f"project not found in any state: {args.folder}")
         targets = [found]
 
-    changed = unchanged = legacy = 0
+    changed = unchanged = 0
     for project in targets:
-        resume = project.resume_file
-        text = read_text(resume) if resume else None
-        if resume is None or text is None:
-            print(f"  {project.folder}: no resume file")
-            continue
-        rendered = render_rules_of_engagement(project.is_sub_project)
-        updated = replace_between(text, ROE_START, ROE_END, rendered)
+        text = read_text(project.resume_file)
+        if text is None:
+            fail(f"{project.folder} has no {RESUME_FILE}; this folder was not created by the projects skill")
+        updated = replace_between(text, ROE_START, ROE_END, render_rules_of_engagement(project.is_sub_project))
         if updated is None:
-            legacy += 1
-            print(f"  {project.folder}: no marker block in {resume.name} (legacy layout); left as is")
-            continue
+            fail(f"{project.folder}/{RESUME_FILE} has no rules-of-engagement marker block; this folder was not created by the projects skill")
         if updated == text:
             unchanged += 1
             continue
-        resume.write_text(updated, encoding="utf-8")
+        project.resume_file.write_text(updated, encoding="utf-8")
         changed += 1
         print(f"  {project.folder}: rules of engagement refreshed")
-    print(f"refreshed {changed}, already current {unchanged}, legacy {legacy}")
+    print(f"refreshed {changed}, already current {unchanged}")
 
 
 # --------------------------------------------------------------------------
 # selftest: the lifecycle end to end in a throwaway tree
 # --------------------------------------------------------------------------
 
+class _Capture:
+    """A minimal stdout stand-in so selftest can read `list --json` output."""
+
+    def __init__(self) -> None:
+        self.text = ""
+
+    def write(self, chunk: str) -> int:
+        self.text += chunk
+        return len(chunk)
+
+    def flush(self) -> None:
+        pass
+
+
 def cmd_selftest(_args: argparse.Namespace) -> None:
     """Run the CLI through create, sub-project, every lifecycle transition,
-    boundary-safe matching, refresh, list and legacy coexistence. This is the
-    CI smoke test and a quick confidence check for anyone changing this file."""
+    boundary-safe matching, refresh, progress, list, and the refusal to touch
+    folders it did not create. This is the CI smoke test and a quick confidence
+    check for anyone changing this file."""
     checks = 0
 
     def check(condition: bool, message: str) -> None:
@@ -957,21 +962,37 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         run("refresh", "--all")
         check("### Step 5: Wait" in (read_text(resume) or ""), "refresh restores the rules of engagement")
 
-        # A legacy project: old resume file name, old parent line, no markers.
-        legacy = ws.projects_dir / "20250101.01.legacy"
-        (legacy / "changelogs").mkdir(parents=True)
-        (legacy / "README.md").write_text("# legacy\n\n- **Parent**: nobody\n", encoding="utf-8")
-        (legacy / "next-task.md").write_text("# Next Task: legacy\n\n## RULES OF ENGAGEMENT\n\nold text\n", encoding="utf-8")
-        (legacy / "changelogs" / "001-first.md").write_text('---\ndate: "2025-01-02"\nsession: 1\n---\n', encoding="utf-8")
-        legacy_project = ws.find("20250101.01.legacy")
-        check(legacy_project is not None and legacy_project.resume_file.name == "next-task.md", "legacy resume file recognized")
-        check(legacy_project.last_activity == date(2025, 1, 2), "last activity read from changelog frontmatter")
-        run("refresh", "20250101.01.legacy")
-        check("old text" in (read_text(legacy / "next-task.md") or ""), "refresh leaves legacy files alone")
-        run("move", "20250101.01.legacy", "--to", "shelved", "--reason", "Old.")
-        check((ws.state_dir("shelved") / "20250101.01.legacy" / "next-task.md").is_file(), "legacy project moves")
-        run("list", "--all", "--json")
+        # Progress is the count of ticked done-when boxes in the brief, nothing else.
+        run("new", "--name", "tracked", "--description", "Has a done-when list.", "--goal", "Prove progress.", "--done", "a,b,c,d,e")
+        tracked = only("tracked")
+        check(tracked.progress == (0, 5), "--done writes five unticked boxes")
+        brief = read_text(tracked.readme) or ""
+        tracked.readme.write_text(brief.replace("- [ ] a", "- [x] a").replace("- [ ] b", "- [X] b"), encoding="utf-8")
+        check(tracked.progress == (2, 5), "two ticked boxes count as 2 of 5")
+        (tracked.path / "changelogs" / "001-first.md").write_text('---\ndate: "2026-01-02"\nsession: 1\n---\n', encoding="utf-8")
+        check(tracked.last_activity == date(2026, 1, 2), "last activity read from changelog frontmatter")
+        stdout, sys.stdout = sys.stdout, _Capture()
+        try:
+            run("list", "--all", "--json")
+            listing = json.loads(sys.stdout.text)
+        finally:
+            sys.stdout = stdout
+        row = next(r for r in listing["projects"] if r["folder"] == tracked.folder)
+        check(row["done_ticked"] == 2 and row["done_total"] == 5 and row["progress_percent"] == 40, "list reports 2/5 as 40%")
         run("list", "--stale", "0")
+
+        # A folder without the marker blocks is not ours: the CLI stops instead of guessing.
+        stranger = ws.projects_dir / "20250101.01.stranger"
+        stranger.mkdir()
+        (stranger / "README.md").write_text("# stranger\n", encoding="utf-8")
+        (stranger / RESUME_FILE).write_text("# Next: stranger\n\nno markers here\n", encoding="utf-8")
+        for argv in (("refresh", "20250101.01.stranger"), ("move", "20250101.01.stranger", "--to", "shelved", "--reason", "x")):
+            try:
+                run(*argv)
+                check(False, f"{argv[0]} should stop on a folder without marker blocks")
+            except SystemExit as exc:
+                check(exc.code == 1, f"{argv[0]} stops with a clear error on a marker-less folder")
+        check((stranger / RESUME_FILE).read_text(encoding="utf-8").endswith("no markers here\n"), "marker-less files are never touched")
 
     print(f"selftest ok: {checks} checks passed")
 

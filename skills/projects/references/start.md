@@ -6,7 +6,7 @@ A project is for work that will take more than one conversation. If the work fit
 
 Do not interview the human field by field. You have the conversation and the codebase; draft the brief from them and ask only for what you cannot infer, usually one or two things: the name, and what done looks like. Then show the draft and ask for a yes.
 
-The brief has: a one-or-two-sentence description; the goal; the definition of done as a short list of checkable statements; scope, in and out; the repositories touched, by workspace folder name (default: this one); constraints you already know; optionally an owner.
+The brief has: a one-or-two-sentence description; the goal; the definition of done as a short list of checkable statements (these become checkboxes, and the count of ticked boxes is the project's progress, so write them as things that are either done or not, three to nine of them); scope, in and out; the repositories touched, by workspace folder name (default: this one); constraints you already know; optionally an owner.
 
 Present it as a compact block and end with a single question: "Shall I create this?" If they edit, update and ask again.
 
@@ -31,11 +31,11 @@ Then open the new `README.md` and put anything from the brief that the flags did
 
 ## 3. Write the initial plan
 
-`plans/001-initial-plan.md` exists with `status: pending`. Fill it: the objective, the approach, three to seven steps in dependency order, how each will be verified, and the open questions. Steps are meaningful units of work, not a checklist of file edits.
+`plans/001-initial-plan.md` exists with `status: pending`. Fill it: the objective, the approach, three to seven steps in dependency order, how each will be verified, the open questions, and, as the final step, the session wrap-up (every plan ends with it; see [wrap-up.md](wrap-up.md)). Steps are meaningful units of work, not a checklist of file edits. If your host has a plan mode, write the plan there and copy it into `plans/001-initial-plan.md` when approved.
 
 ## 4. Get the plan approved, then stop
 
-Present the plan and ask for approval. Do not begin executing in this conversation unless the human explicitly says to continue now. A project is created and planned in one session and worked in the next; that boundary is what makes the resume protocol reliable.
+Present the plan and ask for approval. Do not begin executing in this conversation unless the human explicitly says to continue now; if they do, the approval covers the whole plan through its wrap-up step, and you run it to the commit. By default a project is created and planned in one session and worked in the next; that boundary is what makes the resume protocol reliable.
 
 When approved, set the plan's `status: in-progress` (or leave `pending` if work starts next session) and close with:
 

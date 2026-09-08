@@ -29,7 +29,7 @@ The folder name defaults to `_projects` (the underscore sorts it first and marks
 ```
 YYYYMMDD.NN.slug/
   README.md              the brief
-  next.md                the state (legacy projects: next-task.md)
+  next.md                the state
   plans/001-initial-plan.md
   changelogs/            001-slug.md, 002-slug.md, ... one per session
   decisions/             created on first entry
@@ -43,7 +43,9 @@ Written by `new` and sharpened by the agent as the project is understood. Sectio
 Two lines are read by the CLI and must keep their form:
 
 - `- **Owner:** <name>` names `_projects/owners/<name>.md`.
-- `- **Parent:** [<folder>](../<folder>/)` links a sub-project to its parent. The legacy form `- **Parent**: <folder>` is also recognized.
+- `- **Parent:** [<folder>](../<folder>/)` links a sub-project to its parent.
+
+`## Done when` is a checkbox list (`- [ ] item`, ticked to `- [x]` as items are met). Progress is the count of ticked items over the total, derived by `list` and stated by the agent at both ends of a session; it is written nowhere else. Three to nine items, each either done or not.
 
 `## Repositories` lists the repositories the project touches by their workspace folder name, one per line, or `- this repository`. The rules of engagement check each one at resume.
 
@@ -67,7 +69,7 @@ Keep `next.md` short. If it passes about 150 lines, something in it belongs in a
 
 ### `changelogs/`
 
-`NNN-slug.md`, numbered by session, frontmatter `date`, `session`, `tags`, `summary`; body `## What was done`, `## Decisions made`, `## What is pending`. See [wrap-up.md](wrap-up.md) for sizing.
+`NNN-slug.md`, numbered by session, frontmatter `date`, `session`, `progress` (ticked done-when items at that moment, `"3/7"`), `tags`, `summary`; body `## What was done`, `## Decisions made`, `## What is pending`. See [wrap-up.md](wrap-up.md) for sizing.
 
 ### `decisions/` and `learnings/`
 
@@ -79,7 +81,7 @@ Paths inside `_projects/` are written relative to the repository root (`_project
 
 ## Marker blocks
 
-The two marker pairs above are the only text the CLI rewrites inside a file it did not just create. A legacy file without markers is left alone: `refresh` reports it, `move` inserts a fresh banner block after the title when it needs one and leaves any old prose banner in place.
+The two marker pairs above are the only text the CLI rewrites inside a file it did not just create. A folder whose `README.md` or `next.md` lacks them was not created by this skill; `move` and `refresh` say so and stop rather than guess.
 
 ## Templates
 

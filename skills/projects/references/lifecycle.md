@@ -20,7 +20,7 @@ Add `--dry-run` to see every change first. `move` does the whole job: relocates 
 
 ## Completing
 
-Before moving, confirm with the human that the definition of done in the brief is met, or record honestly what was not. Add a final changelog if this session did work. Then `move --to completed`. If the project has active sub-projects, `move` refuses: complete or park them first, or pass `--force` when the human wants the parent closed regardless.
+Before moving, walk the brief's `## Done when` with the human: every item ticked, or an honest note in the final changelog about what was not. `move --to completed` prints a reminder when boxes are still unticked; it does not refuse, because closing with known gaps is sometimes the right call, but it is the human's call. Add a final changelog if this session did work. Then `move --to completed`. If the project has active sub-projects, `move` refuses: complete or park them first, or pass `--force` when the human wants the parent closed regardless.
 
 Completion is a human decision. Recommend it when the brief's done-when is met; never close a project to make the list shorter.
 
@@ -52,12 +52,12 @@ python3 <skill>/scripts/projects.py list --stale 7  # idle a week or more
 python3 <skill>/scripts/projects.py list --all      # every state
 ```
 
-Lead with the stalest active project and what stands between it and done. An owner treats a project idle for a week as the most important thing in the list.
+The table shows each project's owner, progress (ticked done-when items over total, as a percentage), last activity, and days idle. Lead with the stalest active project and what stands between it and done. An owner treats a project idle for a week as the most important thing in the list.
 
 ## Moving between archived states
 
 `move` works between any two states directly; a held project can be completed or shelved without a stop in active. Sub-project checks apply whenever the target is not active.
 
-## Legacy projects
+## Folders the CLI will not touch
 
-Projects created by earlier versions of this framework (a `next-task.md`, no marker blocks) move the same way. `move` inserts a fresh banner block after the title when it sets a banner and leaves any older prose banner in place for you to remove by hand if you wish.
+`move` and `refresh` work only on folders whose `README.md` and `next.md` carry the marker blocks `new` writes. A folder without them was not created by this skill; the CLI says so and stops rather than guess at its layout.

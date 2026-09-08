@@ -13,6 +13,8 @@ $goal
 
 ## Done when
 
+Tick each item as it is met. Progress is the count of ticked items; nothing else.
+
 $done
 
 ## Scope
