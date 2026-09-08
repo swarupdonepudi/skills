@@ -1,0 +1,20 @@
+{
+  "name": "swarupdonepudi-skills-site",
+  "private": true,
+  "type": "module",
+  "description": "Documentation site for the skills in this repository. Content is synced from ../skills at build time; nothing here is a source of truth.",
+  "scripts": {
+    "sync": "node scripts/sync-skills.mjs",
+    "predev": "npm run sync",
+    "dev": "astro dev",
+    "prebuild": "npm run sync",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.0",
+    "astro": "^7.3.1",
+    "sharp": "^0.35.4",
+    "starlight-links-validator": "^0.26.0"
+  }
+}

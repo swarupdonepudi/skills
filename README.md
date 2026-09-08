@@ -3,7 +3,7 @@
 [![skills.sh](https://skills.sh/b/swarupdonepudi/skills)](https://skills.sh/swarupdonepudi/skills)
 [![validate](https://github.com/swarupdonepudi/skills/actions/workflows/validate.yml/badge.svg)](https://github.com/swarupdonepudi/skills/actions/workflows/validate.yml)
 
-Agent skills by [Swarup Donepudi](https://github.com/swarupdonepudi), in the [Agent Skills](https://agentskills.io) format, for Cursor, Claude Code, Codex, Gemini CLI, and any other host that reads a `SKILL.md`.
+Agent skills by [Swarup Donepudi](https://github.com/swarupdonepudi), in the [Agent Skills](https://agentskills.io) format, for Cursor, Claude Code, Codex, Gemini CLI, and any other host that reads a `SKILL.md`. Read the docs at [swarupdonepudi.github.io/skills](https://swarupdonepudi.github.io/skills/).
 
 ## What is here
 
@@ -64,7 +64,7 @@ Every project has an owner: the operating character the agent becomes at resume.
 
 ## Contributing
 
-Issues and pull requests are welcome. Every skill is linted against the specification and the `projects` CLI runs its own lifecycle self-test on every change (`python3 skills/projects/scripts/projects.py selftest`). The spec's own validator, `skills-ref validate ./skills/projects`, is a fine second opinion.
+Issues and pull requests are welcome. Every skill is linted against the specification and the `projects` CLI runs its own lifecycle self-test on every change (`python3 skills/projects/scripts/projects.py selftest`). The spec's own validator, `skills-ref validate ./skills/projects`, is a fine second opinion. The documentation site under `site/` renders `skills/` on every push to `main` and fails on any broken link; edit the skill, never the site, to change the docs.
 
 ## License
 

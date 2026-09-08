@@ -9,7 +9,7 @@ metadata:
 
 # Projects
 
-Work that takes more than one conversation loses its context between conversations: decisions get buried, the same dead ends are tried twice, and every session opens with ten minutes of re-explaining. This skill fixes that with a folder per project that carries everything the next session needs, and a resume file that loads it all in one drag. The list of active project folders becomes the honest to-do list.
+Work that takes more than one conversation loses its context between conversations: decisions get buried, the same dead ends are tried twice, and every session opens with ten minutes of re-explaining. This skill fixes that with a folder per project that carries everything the next session needs, and a resume file that loads it all in one drag. The list of active project folders becomes the honest to-do list. The reasoning behind every part of the shape is in [references/why.md](references/why.md).
 
 You are the mechanism. The CLI does the mechanical parts (folders, moves, link repair); you do the judgment (what the brief says, what the plan is, what the changelog records, when to stop and ask).
 
@@ -56,7 +56,7 @@ An adopter shapes how you work on their projects by writing `_projects/owners/de
 | "what's on my plate"; "which projects are stale" | Run `list`, lead with the stalest | [references/lifecycle.md](references/lifecycle.md) |
 | Code lives in other repositories | Name them in the brief; never write machine paths | [references/multi-repo.md](references/multi-repo.md) |
 
-Why the framework is shaped this way: [references/why.md](references/why.md). Patterns adopters have grown on top of it (a workforce of named owners, quick notes, proof ledgers, commit locks): [references/extending.md](references/extending.md).
+Patterns adopters have grown on top of the default (a workforce of named owners, quick notes, proof ledgers, commit locks): [references/extending.md](references/extending.md).
 
 ## The CLI
 

@@ -1,3 +1,10 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# The site renders skills/ at build time; nothing generated is a source.
+site/node_modules/
+site/dist/
+site/.astro/
+site/src/content/docs/*/
+site/src/data/

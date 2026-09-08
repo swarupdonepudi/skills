@@ -1,0 +1,50 @@
+---
+title: Skills
+description: Agent skills by Swarup Donepudi, in the Agent Skills format, for Cursor, Claude Code, Codex, Gemini CLI, and any host that reads a SKILL.md.
+template: splash
+editUrl: false
+hero:
+  title: Skills
+  tagline: Agent skills in the open Agent Skills format. Install once; they work in Cursor, Claude Code, Codex, Gemini CLI, and any other host that reads a SKILL.md.
+  actions:
+    # Root-relative under BASE (site.constants.mjs); frontmatter cannot import it.
+    - text: Read the projects skill
+      link: /skills/projects/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/swarupdonepudi/skills
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import skills from '../../data/skills.json';
+
+export const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+## Install
+
+<div class="install-command">
+
+```bash
+npx skills add swarupdonepudi/skills
+```
+
+</div>
+
+The [skills CLI](https://github.com/vercel-labs/skills) detects the agents on your machine and asks whether to install for this project or globally. Claude Code users can also run `/plugin marketplace add swarupdonepudi/skills`.
+
+## What is here
+
+<CardGrid>
+  {skills.map((skill) => (
+    <Card title={skill.title} icon="open-book">
+      <p>{skill.description.split(' Use when')[0]}</p>
+      <p><a href={`${base}/${skill.name}/`}>Read the docs</a></p>
+    </Card>
+  ))}
+</CardGrid>
+
+## Where these come from
+
+Each skill here is something that ran for a long time as a working practice before it became a skill. The `projects` skill grew out of the framework that carried some 350 pieces of multi-session work to completion across [Planton](https://planton.ai) and [Stigmer](https://stigmer.ai), rebuilt from first principles for the Agent Skills format. The documentation on this site is rendered from the skills' own files on every build; there is no second copy to drift.
