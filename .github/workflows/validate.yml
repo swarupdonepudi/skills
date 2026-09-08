@@ -1,0 +1,34 @@
+# Two gates, both dependency-free:
+#
+#   lint   every skill's SKILL.md follows the Agent Skills specification and
+#          this repository's own bar (see .github/scripts/lint-skills.py).
+#   smoke  the projects CLI runs a full lifecycle in a throwaway git repo:
+#          create, sub-project, move through every state and back, refresh,
+#          list. If any step fails the skill is not fit to publish.
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Lint skills against the specification
+        run: python3 .github/scripts/lint-skills.py
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Run the projects CLI through a full lifecycle
+        run: python3 skills/projects/scripts/projects.py selftest
