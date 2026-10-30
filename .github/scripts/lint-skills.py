@@ -13,9 +13,9 @@ Standard library only, so CI needs nothing but Python. The checks:
   size          the SKILL.md body stays under MAX_SKILL_LINES. The spec says
                 500; this repository holds itself to 300 so the always-loaded
                 instructions stay small and the detail lives in references/.
-  links         every relative markdown link in SKILL.md and references/*.md
-                points at a file that exists, so progressive disclosure never
-                dead-ends.
+  links         every relative markdown link in SKILL.md, README.md and
+                references/*.md points at a file that exists, so progressive
+                disclosure never dead-ends.
   scripts       every *.py under scripts/ byte-compiles.
 
 Exit code is non-zero when anything fails; each failure is printed on its own
@@ -121,7 +121,10 @@ def check_skill(skill_dir: Path) -> list[str]:
     if body_lines > MAX_SKILL_LINES:
         failures.append(f"{name}: size: SKILL.md body is {body_lines} lines; the limit is {MAX_SKILL_LINES}")
 
-    for doc in [skill_md, *sorted((skill_dir / "references").glob("*.md"))]:
+    docs = [skill_md, *sorted((skill_dir / "references").glob("*.md"))]
+    if (skill_dir / "README.md").is_file():
+        docs.append(skill_dir / "README.md")
+    for doc in docs:
         for match in MARKDOWN_LINK.finditer(doc.read_text(encoding="utf-8")):
             target = match.group("target")
             if "://" in target or target.startswith("#") or target.startswith("mailto:"):
