@@ -9,7 +9,7 @@ Agent skills by [Swarup Donepudi](https://github.com/swarupdonepudi), in the [Ag
 
 | Skill | What it does |
 | --- | --- |
-| [`skills/projects`](skills/projects/SKILL.md) | Persistent memory for work that spans more than one agent session. Each project is a folder that carries its brief, a one-file resume, plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. The list of active folders is your honest to-do list. |
+| [`skills/projects`](skills/projects/SKILL.md) | Persistent memory for work that spans more than one agent session. Each project is a folder that carries its brief, a one-file resume, plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. The list of active folders is your honest to-do list. Work that never ends (a daily show, a weekly loop) runs as a standing project, measured by whether each cycle was kept. |
 
 ## Install
 
@@ -53,6 +53,8 @@ When the work is done:
 > Complete this project.
 
 The folder moves to `_projects/.completed/`, every reference is repaired, and your active list is one shorter. Pause with "put this on hold", defer with "shelve this", and ask "what's on my plate" to see the portfolio, stalest first.
+
+Some work never completes: a daily show, a weekly distribution loop, an issue queue. Say "set up a standing project for it" and the agent creates `_projects/standing/<slug>/` with a duty and a cadence instead of a done-when list. Each kept cycle writes a unit folder, the resume file stays the same size forever, and `list` tells you whether the duty is on time or how many days it is overdue.
 
 ## Shaping how the agent works
 

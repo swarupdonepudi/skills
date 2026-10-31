@@ -7,8 +7,10 @@ _projects/
   README.md                        written once by `new`; an adopter may edit it freely
   YYYYMMDD.NN.slug/                active project
   YYYYMMDD.NN.sp.slug/             active sub-project (flat, linked by content)
+  standing/<slug>/                 active standing project: a duty that never completes
   .completed/YYYYMMDD.NN.slug/     finished; still resumable
   .on-hold/YYYYMMDD.NN.slug/       paused; the banner says why and what resumes it
+  .on-hold/standing/<slug>/        a paused standing project (likewise under .shelved/)
   .shelved/YYYYMMDD.NN.slug/       deferred indefinitely
   owners/<name>.md                 owner characters (optional)
 ```
@@ -23,6 +25,8 @@ The folder name defaults to `_projects` (the underscore sorts it first and marks
 - `NN` is a per-day sequence. The CLI computes it across every lifecycle folder, so a project created and archived on the same day cannot collide with the next.
 - `sp.` marks a sub-project. Sub-projects share the day's sequence with ordinary projects.
 - `slug` is kebab-case: lowercase letters, digits, single hyphens.
+
+A standing project is `standing/<slug>`, with no date and no sequence: lowercase letters, digits, and hyphens. Its layout, with `units/` and `playbooks/`, is in [standing.md](standing.md).
 
 ## Inside a project
 
@@ -85,4 +89,4 @@ The two marker pairs above are the only text the CLI rewrites inside a file it d
 
 ## Templates
 
-Everything `new` writes comes from `assets/templates/`: `README.md`, `next.md`, `rules-of-engagement.md`, `plan.md`, `projects-readme.md`, `owner.md`. The agent uses `changelog.md`, `decision.md`, and `learning.md` as the shape for what it writes by hand; the `$placeholders` in them are for the agent to fill.
+Everything `new` writes comes from `assets/templates/`: `README.md`, `next.md`, `rules-of-engagement.md`, `plan.md`, `projects-readme.md`, `owner.md`, and for a standing project `standing-README.md`, `standing-next.md`, and `standing-rules-of-engagement.md`. The agent uses `changelog.md`, `decision.md`, and `learning.md` as the shape for what it writes by hand; the `$placeholders` in them are for the agent to fill.

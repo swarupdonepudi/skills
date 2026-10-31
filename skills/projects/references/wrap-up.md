@@ -4,6 +4,8 @@ Every session ends here, including short or exploratory ones, and it is the fina
 
 Order matters: records first, then the commit, then the closing summary.
 
+A standing project wraps up the same way with three changes, set out in [standing.md](standing.md): log the cycle's unit in `units/YYYY-MM/<unit>/` instead of ticking done-when items; replace `## Current status` in `next.md` instead of adding a session log row; write `cycle:` (the unit id) in the changelog frontmatter instead of `progress:`. It closes with the unit logged and when the next cycle is due, not a progress line.
+
 ## 1. Tick the done-when items that were met
 
 In the brief's `## Done when`, change `- [ ]` to `- [x]` for each item this session completed, with the human's confirmation if there is any doubt. This is the only place progress is written; everything else derives from it. Do not tick an item that is "mostly" done.

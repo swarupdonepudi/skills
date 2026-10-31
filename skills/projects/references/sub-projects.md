@@ -39,6 +39,10 @@ Several agents on sibling sub-projects at once is the intended use. Each commits
 
 `move` on a sub-project updates its row in the parent's table. `move` on a parent refuses while any sub-project is active; finish or park the children first, or `--force`. A parent is normally completed last, after its sub-projects, with a final changelog that sums them up.
 
+## Under a standing project
+
+A standing project can have sub-projects too: one-time builds beside the duty, such as a new tool or a new channel. They stay ordinary dated folders at the top level of `_projects/`, created with `--parent standing/<slug>`, and their brief links the parent as `- **Parent:** [standing/<slug>](../standing/<slug>/)`. They complete like any project. The standing parent never waits on them and never completes. See [standing.md](standing.md).
+
 ## The parent line
 
 `new` writes `- **Parent:** [<folder>](../<folder>/)` into the sub-project's brief, and `list` and `move` read it. Keep the line intact when editing a sub-project's brief by hand.

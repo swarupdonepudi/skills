@@ -6,6 +6,7 @@ One file, four operations, no dependencies beyond Python 3.9's standard
 library. The agent runs it; a person can too.
 
     projects.py new      --name <slug> --description ... --goal ... [--parent <folder>] [--owner <name>]
+    projects.py new      --standing <slug> --cadence daily|mon-sat|weekdays|weekly --description ... --duty ...
     projects.py move     <folder> --to completed|on-hold|shelved|active [--reason ...] [--resume-when ...] [--dry-run]
     projects.py list     [--all] [--stale N] [--owner <name>] [--json]
     projects.py refresh  <folder> | --all
@@ -28,6 +29,12 @@ Design notes that matter when changing this file:
   project this skill manages; the CLI says so and stops rather than guess.
 * Progress is derived, never stored: the count of ticked boxes under
   `## Done when` in the brief. `list` computes it; nothing writes it.
+* A standing project is a duty that never completes. It lives at
+  `<state dir>/standing/<slug>/` (no date, no sequence), its `folder` is
+  `standing/<slug>`, and that is also how a Parent line and the command line
+  name it. The location decides that a project is standing; the brief's
+  `**Kind:** standing` line tells a human reader. It has no progress: `list`
+  reports its cadence, its last unit, and how many cycle days it is overdue.
 * Markdown templates are rendered with `string.Template` (`$var`), never
   `str.format`, so braces in markdown are safe.
 * Link repair on a move is computed from the geometry of the tree, not from
@@ -74,8 +81,15 @@ STATUS_WORDS = {"active": "Active", "completed": "Completed", "on-hold": "On hol
 RESUME_FILE = "next.md"
 OWNERS_DIR = "owners"
 
+# Standing projects live in this folder inside each state folder:
+# `_projects/standing/<slug>/`, `_projects/.on-hold/standing/<slug>/`, and so
+# on. Never under `.completed/`: a duty is kept, paused, or stopped, never done.
+STANDING_DIR = "standing"
+CADENCES = ("daily", "mon-sat", "weekdays", "weekly")
+
 FOLDER_NAME = re.compile(r"^(?P<date>\d{8})\.(?P<seq>\d{2})\.(?P<sp>sp\.)?(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$")
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+STANDING_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 # Marker blocks this CLI owns inside README.md and the resume file.
 ROE_START, ROE_END = "<!-- projects:roe:start -->", "<!-- projects:roe:end -->"
@@ -85,6 +99,11 @@ STATUS_START, STATUS_END = "<!-- projects:status:start -->", "<!-- projects:stat
 # list items; keep the form when editing a brief by hand.
 OWNER_LINE = re.compile(r"^- \*\*Owner:\*\*\s*(?P<name>[A-Za-z0-9._-]+)", re.MULTILINE)
 PARENT_LINE = re.compile(r"^- \*\*Parent:\*\*\s*\[(?P<folder>[^\]]+)\]\([^)]*\)", re.MULTILINE)
+# A standing project's brief also carries its cadence. The Created line is
+# read only where the folder name carries no date.
+CADENCE_LINE = re.compile(r"^- \*\*Cadence:\*\*\s*(?P<cadence>[a-z-]+)", re.MULTILINE)
+CREATED_LINE = re.compile(r"^- \*\*Created:\*\*\s*(?P<date>\d{4}-\d{2}-\d{2})", re.MULTILINE)
+UNIT_DATE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})")
 
 # A done-when item: `- [ ] text` or `- [x] text` under `## Done when`.
 CHECKBOX = re.compile(r"^- \[(?P<mark>[ xX])\] ", re.MULTILINE)
@@ -166,6 +185,38 @@ def section_body(text: str, heading: str) -> Optional[str]:
     return match.group("body").strip() if match else None
 
 
+def checkbox_count(text: str, heading: str) -> Tuple[int, int]:
+    """(ticked, total) checkboxes under a `## heading` section."""
+    body = section_body(text, heading) or ""
+    marks = [m.group("mark") for m in CHECKBOX.finditer(body)]
+    return sum(1 for mark in marks if mark != " "), len(marks)
+
+
+def is_cycle_day(cadence: str, day: date) -> bool:
+    """Whether a daily-style cadence expects a cycle on this day."""
+    if cadence == "mon-sat":
+        return day.weekday() != 6
+    if cadence == "weekdays":
+        return day.weekday() < 5
+    return True
+
+
+def overdue_days(cadence: str, last: date, on: date) -> int:
+    """How many cycle days a standing project is overdue on `on`.
+
+    Daily, mon-sat, and weekdays: count the days the cadence expects a cycle,
+    strictly after the last unit and strictly before `on`. Today is never
+    overdue yet; a unit logged yesterday is on time. Weekly: a cycle is due
+    seven days after the last unit, and each day past that is one day overdue.
+    An unknown cadence is treated as daily."""
+    gap = (on - last).days
+    if gap <= 1:
+        return 0
+    if cadence == "weekly":
+        return max(0, gap - 7)
+    return sum(1 for offset in range(1, gap) if is_cycle_day(cadence, date.fromordinal(last.toordinal() + offset)))
+
+
 # --------------------------------------------------------------------------
 # The workspace: a repo root and its projects directory
 # --------------------------------------------------------------------------
@@ -193,8 +244,15 @@ class Project:
     path: Path
 
     @property
+    def is_standing(self) -> bool:
+        """A standing project lives in a `standing/` folder inside a state folder."""
+        return self.path.parent.name == STANDING_DIR and self.path.parent.parent == self.workspace.state_dir(self.state)
+
+    @property
     def folder(self) -> str:
-        return self.path.name
+        """The name the CLI, Parent lines, and sub-project tables use:
+        `YYYYMMDD.NN.slug` for a project, `standing/<slug>` for a standing one."""
+        return f"{STANDING_DIR}/{self.path.name}" if self.is_standing else self.path.name
 
     @property
     def rel(self) -> str:
@@ -213,15 +271,16 @@ class Project:
     @property
     def slug(self) -> str:
         parts = self.parts
-        return parts.group("slug") if parts else self.folder
+        return parts.group("slug") if parts else self.path.name
 
     @property
     def created(self) -> Optional[date]:
         parts = self.parts
-        if not parts:
-            return None
         try:
-            return datetime.strptime(parts.group("date"), "%Y%m%d").date()
+            if parts:
+                return datetime.strptime(parts.group("date"), "%Y%m%d").date()
+            match = CREATED_LINE.search(read_text(self.readme) or "")
+            return datetime.strptime(match.group("date"), "%Y-%m-%d").date() if match else None
         except ValueError:
             return None
 
@@ -244,11 +303,54 @@ class Project:
         return match.group("folder").strip() if match else None
 
     @property
-    def progress(self) -> Tuple[int, int]:
-        """(ticked, total) done-when items. The brief is the only source."""
-        body = section_body(read_text(self.readme) or "", "Done when") or ""
-        marks = [m.group("mark") for m in CHECKBOX.finditer(body)]
-        return sum(1 for mark in marks if mark != " "), len(marks)
+    def progress(self) -> Optional[Tuple[int, int]]:
+        """(ticked, total) done-when items. The brief is the only source. A
+        standing project never completes, so it has no progress: None."""
+        if self.is_standing:
+            return None
+        return checkbox_count(read_text(self.readme) or "", "Done when")
+
+    @property
+    def cadence(self) -> Optional[str]:
+        match = CADENCE_LINE.search(read_text(self.readme) or "")
+        return match.group("cadence") if match else None
+
+    @property
+    def setup(self) -> Optional[Tuple[int, int]]:
+        """(ticked, total) one-time setup items of a standing project, or None
+        when its brief has no `## Setup` list. Never a completion measure."""
+        ticked, total = checkbox_count(read_text(self.readme) or "", "Setup")
+        return (ticked, total) if total else None
+
+    def last_unit(self) -> Tuple[Optional[str], Optional[date]]:
+        """The newest unit of a standing project: (name, date).
+
+        Units live at `units/YYYY-MM/<unit>/`. A unit's date is the date its
+        name starts with (`2026-10-31`, `2026-10-31-ep12`), else the newest
+        file inside it. With no units yet: (None, last activity)."""
+        newest: Tuple[Optional[str], Optional[date]] = (None, None)
+        units = self.path / "units"
+        if units.is_dir():
+            for month in units.iterdir():
+                if not month.is_dir():
+                    continue
+                for unit in month.iterdir():
+                    if not unit.is_dir():
+                        continue
+                    found: Optional[date] = None
+                    match = UNIT_DATE.match(unit.name)
+                    if match:
+                        try:
+                            found = datetime.strptime(match.group("date"), "%Y-%m-%d").date()
+                        except ValueError:
+                            found = None
+                    if found is None:
+                        found = _newest_mtime(unit) or date.fromtimestamp(unit.stat().st_mtime)
+                    if newest[1] is None or (found, unit.name) > (newest[1], newest[0] or ""):
+                        newest = (unit.name, found)
+        if newest[0] is None:
+            return None, self.last_activity
+        return newest
 
     @property
     def last_activity(self) -> Optional[date]:
@@ -270,14 +372,18 @@ class Project:
                         newest = found
         if newest:
             return newest
-        latest_mtime = 0.0
-        for root, _dirs, files in os.walk(self.path):
-            for name in files:
-                try:
-                    latest_mtime = max(latest_mtime, (Path(root) / name).stat().st_mtime)
-                except OSError:
-                    continue
-        return date.fromtimestamp(latest_mtime) if latest_mtime else self.created
+        return _newest_mtime(self.path) or self.created
+
+
+def _newest_mtime(folder: Path) -> Optional[date]:
+    latest_mtime = 0.0
+    for root, _dirs, files in os.walk(folder):
+        for name in files:
+            try:
+                latest_mtime = max(latest_mtime, (Path(root) / name).stat().st_mtime)
+            except OSError:
+                continue
+    return date.fromtimestamp(latest_mtime) if latest_mtime else None
 
 
 class Workspace:
@@ -298,12 +404,21 @@ class Workspace:
             for entry in sorted(folder.iterdir()):
                 if entry.is_dir() and FOLDER_NAME.match(entry.name):
                     found.append(Project(self, state, entry))
+            standing = folder / STANDING_DIR
+            if standing.is_dir():
+                for entry in sorted(standing.iterdir()):
+                    if entry.is_dir() and STANDING_SLUG.match(entry.name):
+                        found.append(Project(self, state, entry))
         return found
 
     def find(self, folder: str) -> Optional[Project]:
-        """Locate a project by folder name in any lifecycle state."""
+        """Locate a project by folder name in any lifecycle state. A standing
+        project is found by `standing/<slug>` or by its bare slug."""
+        relative = folder
+        if not FOLDER_NAME.match(folder) and not folder.startswith(f"{STANDING_DIR}/"):
+            relative = f"{STANDING_DIR}/{folder}"
         for state in STATES:
-            candidate = self.state_dir(state) / folder
+            candidate = self.state_dir(state) / relative
             if candidate.is_dir():
                 return Project(self, state, candidate)
         return None
@@ -345,8 +460,17 @@ PARENT_BLOCK = (
 )
 
 
-def render_rules_of_engagement(is_sub_project: bool) -> str:
+def render_rules_of_engagement(is_sub_project: bool, is_standing: bool = False) -> str:
+    if is_standing:
+        return render("standing-rules-of-engagement.md").rstrip("\n")
     return render("rules-of-engagement.md", parent_block=PARENT_BLOCK if is_sub_project else "").rstrip("\n")
+
+
+def relative_link(source_dir: Path, target_dir: Path) -> str:
+    """A relative markdown link from one project folder to another, ending in
+    a slash: `../20260908.01.foo/` beside it, `../../standing/show/` from a
+    standing project, `../standing/show/` to one."""
+    return Path(os.path.relpath(target_dir, source_dir)).as_posix() + "/"
 
 
 # --------------------------------------------------------------------------
@@ -356,6 +480,15 @@ def render_rules_of_engagement(is_sub_project: bool) -> str:
 def cmd_new(args: argparse.Namespace) -> None:
     workspace = Workspace(resolve_repo_root(args.repo_root), args.projects_dir)
 
+    if args.standing:
+        _new_standing(workspace, args)
+        return
+    if not args.name:
+        fail("give --name <slug> for a project, or --standing <slug> for a standing project")
+    if not args.goal:
+        fail("--goal is required: what done looks like at the highest level")
+    if args.cadence or args.duty or args.loop or args.setup:
+        fail("--cadence, --duty, --loop and --setup belong to a standing project; use --standing <slug>")
     if not SLUG.match(args.name):
         fail(f"--name must be kebab-case (letters, digits, single hyphens): got '{args.name}'")
     if args.owner and not SLUG.match(args.owner):
@@ -395,7 +528,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     if args.owner:
         identity_lines += f"- **Owner:** {args.owner}\n"
     if parent:
-        identity_lines += f"- **Parent:** [{parent.folder}](../{parent.folder}/)\n"
+        identity_lines += f"- **Parent:** [{parent.folder}]({relative_link(project_path, parent.path)})\n"
 
     project_path.mkdir()
     (project_path / "plans").mkdir()
@@ -429,14 +562,7 @@ def cmd_new(args: argparse.Namespace) -> None:
         "plan.md", date=today(), number="001", title="Initial plan", objective=args.goal.strip(),
     ), encoding="utf-8")
 
-    owner_created = None
-    if args.owner:
-        owners_dir = workspace.projects_dir / OWNERS_DIR
-        owner_file = owners_dir / f"{args.owner}.md"
-        if not owner_file.exists():
-            owners_dir.mkdir(exist_ok=True)
-            owner_file.write_text(render("owner.md", name=args.owner), encoding="utf-8")
-            owner_created = owner_file
+    owner_created = _ensure_owner_file(workspace, args.owner)
 
     if parent:
         _register_sub_project_with_parent(parent, project, args.description.strip())
@@ -454,12 +580,106 @@ def cmd_new(args: argparse.Namespace) -> None:
         print(f"  owner file created from the starter: {posix(owner_created.relative_to(workspace.repo_root))}")
 
 
+def _new_standing(workspace: Workspace, args: argparse.Namespace) -> None:
+    """Create `_projects/standing/<slug>/`: a duty kept true, never completed.
+    The same files as a project, from the standing templates, plus `units/`
+    (one folder per kept cycle) and `playbooks/` (the routine)."""
+    slug = args.standing
+    if args.name:
+        fail("give either --name (a project) or --standing (a standing project), not both")
+    if not STANDING_SLUG.match(slug):
+        fail(f"--standing must be lowercase letters, digits and hyphens, starting with a letter or digit: got '{slug}'")
+    if not args.cadence:
+        fail(f"--cadence is required for a standing project: one of {', '.join(CADENCES)}")
+    if not args.duty:
+        fail("--duty is required for a standing project: the condition kept true, in one or two sentences")
+    if args.parent:
+        fail("a standing project cannot be a sub-project; its own sub-projects name it with --parent standing/<slug>")
+    if args.done or args.goal:
+        fail("a standing project has no goal or done-when list: it never completes. State the condition kept true with --duty, and one-time work with --setup")
+    if args.owner and not SLUG.match(args.owner):
+        fail(f"--owner must be kebab-case: got '{args.owner}'")
+    existing = workspace.find(f"{STANDING_DIR}/{slug}")
+    if existing is not None:
+        fail(f"a standing project with this name already exists: {existing.rel}")
+
+    bootstrapped = workspace.ensure_projects_dir()
+    project_path = workspace.projects_dir / STANDING_DIR / slug
+    project_path.mkdir(parents=True)
+    for name in ("plans", "changelogs", "units", "playbooks"):
+        (project_path / name).mkdir()
+    project = Project(workspace, "active", project_path)
+    rel = project.rel
+
+    setup_items = [item for item in (args.setup or "").split(",") if item.strip()]
+    setup_section = ""
+    if setup_items:
+        setup_section = (
+            "## Setup\n\nOne-time work before or beside the loop. Tick each item as it is met. "
+            "It is reported as setup x of y, never as completion.\n\n"
+            + bullets(setup_items, "", prefix="- [ ] ") + "\n\n"
+        )
+
+    project.readme.write_text(render(
+        "standing-README.md",
+        slug=slug,
+        description=args.description.strip(),
+        cadence=args.cadence,
+        identity_lines=f"- **Owner:** {args.owner}\n" if args.owner else "",
+        date=today(),
+        duty=args.duty.strip(),
+        loop=args.loop.strip() if args.loop else "- Define with the human before approving the first plan: what one cycle produces, where its unit is logged, and which playbook runs it.",
+        setup_section=setup_section,
+        scope=args.scope.strip() if args.scope else "- Define with the human before approving the first plan.",
+        repositories=bullets([r for r in (args.repos or "").split(",") if r.strip()], "- this repository"),
+    ), encoding="utf-8")
+
+    project.resume_file.write_text(render(
+        "standing-next.md",
+        slug=slug,
+        rules_of_engagement=render_rules_of_engagement(is_sub_project=False, is_standing=True),
+        rel=rel,
+        date=today(),
+    ), encoding="utf-8")
+
+    (project_path / "plans" / "001-initial-plan.md").write_text(render(
+        "plan.md", date=today(), number="001", title="Initial plan",
+        objective=f"Set up the duty and keep its first cycle. The duty: {args.duty.strip()}",
+    ), encoding="utf-8")
+
+    owner_created = _ensure_owner_file(workspace, args.owner)
+
+    print(f"created {rel}")
+    if bootstrapped:
+        print(f"  bootstrapped {workspace.projects_dir_name}/ (README written once; edit it freely)")
+    print(f"  README.md            the brief: the duty, cadence {args.cadence}, the loop")
+    print("  next.md              the resume file; fixed size, drag it into a conversation to continue")
+    print("  plans/001-initial-plan.md   pending approval")
+    print("  playbooks/           the routine, one file per procedure")
+    print("  units/YYYY-MM/<unit>/   one folder per kept cycle")
+    print("  changelogs/          one entry per session, written at wrap-up")
+    if owner_created:
+        print(f"  owner file created from the starter: {posix(owner_created.relative_to(workspace.repo_root))}")
+
+
+def _ensure_owner_file(workspace: Workspace, owner: Optional[str]) -> Optional[Path]:
+    if not owner:
+        return None
+    owners_dir = workspace.projects_dir / OWNERS_DIR
+    owner_file = owners_dir / f"{owner}.md"
+    if owner_file.exists():
+        return None
+    owners_dir.mkdir(exist_ok=True)
+    owner_file.write_text(render("owner.md", name=owner), encoding="utf-8")
+    return owner_file
+
+
 def _register_sub_project_with_parent(parent: Project, sub: Project, description: str) -> None:
     """Add the sub-project to the parent's brief (a table row) and to the
     parent's resume file (a bullet), creating the sections on first use."""
     readme_text = read_text(parent.readme)
     if readme_text is not None:
-        row = f"| [{sub.folder}](../{sub.folder}/) | Active | {description} |"
+        row = f"| [{sub.folder}]({relative_link(parent.path, sub.path)}) | Active | {description} |"
         parent.readme.write_text(_append_table_row(readme_text, "Sub-projects", "| Sub-project | Status | Description |\n|---|---|---|", row), encoding="utf-8")
 
     resume_text = read_text(parent.resume_file)
@@ -533,6 +753,11 @@ def cmd_move(args: argparse.Namespace) -> None:
         fail(f"project not found in any state: {args.folder}")
     if project.state == args.to:
         fail(f"{project.folder} is already {STATUS_WORDS[args.to].lower()}")
+    if project.is_standing and args.to == "completed":
+        fail(
+            f"{project.folder} is a standing project: a duty is never completed. "
+            "Pause it with --to on-hold, or stop it with --to shelved."
+        )
     if args.to == "on-hold" and not args.resume_when:
         fail("--resume-when is required when putting a project on hold: what has to happen before it resumes?")
     if args.to in ("on-hold", "shelved") and not args.reason:
@@ -558,7 +783,7 @@ def cmd_move(args: argparse.Namespace) -> None:
 
     edits = _plan_move_edits(workspace, project, old_abs, new_abs, args)
 
-    if args.to == "completed":
+    if args.to == "completed" and project.progress:
         ticked, total = project.progress
         if total and ticked < total:
             print(f"note: {total - ticked} of {total} done-when items are still unticked in README.md")
@@ -577,6 +802,10 @@ def cmd_move(args: argparse.Namespace) -> None:
     shutil.move(str(old_abs), str(new_abs))
     for edit in edits:
         edit.path.write_text(edit.after, encoding="utf-8")
+    # A `standing/` folder left empty by the move goes too; `new` and the next
+    # move recreate it when needed.
+    if project.is_standing and old_abs.parent.is_dir() and not any(old_abs.parent.iterdir()):
+        old_abs.parent.rmdir()
     print(f"done: {project.folder} is now {STATUS_WORDS[args.to].lower()}")
 
 
@@ -755,28 +984,51 @@ def cmd_list(args: argparse.Namespace) -> None:
         return
 
     states = list(STATES.keys()) if args.all else ["active"]
+    on = date.today()
     rows = []
     for project in workspace.projects(states):
         if args.owner and (project.owner or "") != args.owner:
             continue
-        last = project.last_activity
-        idle = (date.today() - last).days if last else None
-        if args.stale is not None and (idle is None or idle < args.stale):
-            continue
-        ticked, total = project.progress
-        rows.append({
+        row = {
             "folder": project.folder,
+            "kind": "standing" if project.is_standing else "project",
             "state": project.state,
             "owner": project.owner or "",
             "parent": project.parent_folder or "",
             "created": project.created.isoformat() if project.created else "",
-            "last_activity": last.isoformat() if last else "",
-            "idle_days": idle,
-            "done_ticked": ticked,
-            "done_total": total,
-            "progress_percent": round(100 * ticked / total) if total else None,
             "resume": posix(project.resume_file.relative_to(workspace.repo_root)),
-        })
+        }
+        if project.is_standing:
+            # A standing project is measured by its cycles, not by completion:
+            # idle days count from the last unit, and overdue from the cadence.
+            unit, last = project.last_unit()
+            cadence = project.cadence or ""
+            setup = project.setup
+            row.update({
+                "cadence": cadence,
+                "last_unit": unit or "",
+                "last_unit_date": last.isoformat() if last else "",
+                "overdue_days": overdue_days(cadence, last, on) if last else None,
+                "setup_ticked": setup[0] if setup else None,
+                "setup_total": setup[1] if setup else None,
+                "done_ticked": None,
+                "done_total": None,
+                "progress_percent": None,
+            })
+        else:
+            last = project.last_activity
+            ticked, total = project.progress or (0, 0)
+            row.update({
+                "done_ticked": ticked,
+                "done_total": total,
+                "progress_percent": round(100 * ticked / total) if total else None,
+            })
+        idle = (on - last).days if last else None
+        if args.stale is not None and (idle is None or idle < args.stale):
+            continue
+        row["last_activity"] = last.isoformat() if last else ""
+        row["idle_days"] = idle
+        rows.append(row)
 
     counts = {state: len(workspace.projects([state])) for state in STATES}
 
@@ -787,31 +1039,68 @@ def cmd_list(args: argparse.Namespace) -> None:
     if not rows:
         print("no projects match" if (args.stale is not None or args.owner) else "no active projects")
     else:
-        # Stalest first: the owner's rule is to lead with what has waited longest.
-        rows.sort(key=lambda r: (-(r["idle_days"] if r["idle_days"] is not None else -1), r["folder"]))
+        # Standing projects first, most overdue first; then projects stalest
+        # first. The owner's rule is to lead with what has waited longest.
+        rows.sort(key=lambda r: (
+            r["kind"] != "standing",
+            -(r.get("overdue_days") or 0),
+            -(r["idle_days"] if r["idle_days"] is not None else -1),
+            r["folder"],
+        ))
         by_parent: Dict[str, List[dict]] = {}
         top: List[dict] = []
         folders = {r["folder"] for r in rows}
         for row in rows:
-            if row["parent"] and row["parent"] in folders:
+            if row["parent"] and row["parent"] in folders and row["parent"] != row["folder"]:
                 by_parent.setdefault(row["parent"], []).append(row)
             else:
                 top.append(row)
         header = f"{'project':<52} {'state':<10} {'owner':<12} {'progress':<12} {'last activity':<14} idle"
         print(header)
         print("-" * len(header))
-        for row in top:
-            _print_row(row, indent="")
+        printed: set = set()
+
+        def print_tree(row: dict, depth: int) -> None:
+            # Any depth: a sub-project of a sub-project nests one level more.
+            if row["folder"] in printed:
+                return
+            printed.add(row["folder"])
+            _print_row(row, indent="  " * depth)
             for child in by_parent.get(row["folder"], []):
-                _print_row(child, indent="  ")
+                print_tree(child, depth + 1)
+
+        for row in top:
+            print_tree(row, 0)
+        # A parent chain that loops back on itself has no top; print it flat
+        # rather than lose it.
+        for row in rows:
+            print_tree(row, 0)
     summary = " · ".join(f"{STATUS_WORDS[s].lower()} {counts[s]}" for s in STATES)
     print(f"\n{summary}")
 
 
+def _standing_summary(row: dict) -> str:
+    """`standing · daily · last unit 2026-10-30 · overdue 2 d · setup 3/7`."""
+    parts = ["standing", row["cadence"] or "no cadence"]
+    if row["last_unit"]:
+        parts.append(f"last unit {row['last_unit_date']}")
+    else:
+        parts.append(f"no unit yet (activity {row['last_unit_date'] or '-'})")
+    overdue = row["overdue_days"]
+    if overdue is not None:
+        parts.append("on time" if overdue == 0 else f"overdue {overdue} d")
+    if row["setup_total"]:
+        parts.append(f"setup {row['setup_ticked']}/{row['setup_total']}")
+    return " · ".join(parts)
+
+
 def _print_row(row: dict, indent: str) -> None:
+    name = f"{indent}{row['folder']}"
+    if row["kind"] == "standing":
+        print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {_standing_summary(row)}")
+        return
     idle = f"{row['idle_days']}d" if row["idle_days"] is not None else "-"
     progress = f"{row['done_ticked']}/{row['done_total']} {row['progress_percent']}%" if row["done_total"] else "-"
-    name = f"{indent}{row['folder']}"
     print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {progress:<12} {row['last_activity'] or '-':<14} {idle}")
 
 
@@ -836,7 +1125,7 @@ def cmd_refresh(args: argparse.Namespace) -> None:
         text = read_text(project.resume_file)
         if text is None:
             fail(f"{project.folder} has no {RESUME_FILE}; this folder was not created by the projects skill")
-        updated = replace_between(text, ROE_START, ROE_END, render_rules_of_engagement(project.is_sub_project))
+        updated = replace_between(text, ROE_START, ROE_END, render_rules_of_engagement(project.is_sub_project, project.is_standing))
         if updated is None:
             fail(f"{project.folder}/{RESUME_FILE} has no rules-of-engagement marker block; this folder was not created by the projects skill")
         if updated == text:
@@ -981,6 +1270,114 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         check(row["done_ticked"] == 2 and row["done_total"] == 5 and row["progress_percent"] == 40, "list reports 2/5 as 40%")
         run("list", "--stale", "0")
 
+        # Standing projects: a duty kept true, never completed.
+        def capture(*argv: str) -> str:
+            stdout, sys.stdout = sys.stdout, _Capture()
+            try:
+                run(*argv)
+                text = sys.stdout.text
+            finally:
+                sys.stdout = stdout
+            return text
+
+        def refused(*argv: str) -> bool:
+            try:
+                run(*argv)
+            except SystemExit as exc:
+                return exc.code == 1
+            return False
+
+        run("new", "--standing", "show", "--cadence", "daily", "--description", "A daily show.",
+            "--duty", "An episode is out every day.", "--setup", "rig,prompter,channel")
+        show = ws.find("standing/show")
+        check(show is not None and show.path == ws.projects_dir / STANDING_DIR / "show", "standing project created at standing/<slug>/")
+        check(show.is_standing and show.folder == "standing/show" and show.slug == "show", "standing identity: folder standing/show")
+        check(ws.find("show") is not None and ws.find("show").path == show.path, "a standing project is found by its bare slug too")
+        check((show.path / "units").is_dir() and (show.path / "playbooks").is_dir(), "units/ and playbooks/ created")
+        brief = read_text(show.readme) or ""
+        check("- **Kind:** standing" in brief and "## Duty" in brief and "## Done when" not in brief, "standing brief: kind and duty, no done-when")
+        check(show.cadence == "daily" and show.progress is None and show.setup == (0, 3), "cadence read, progress None, setup 0/3")
+        check(show.created == date.today(), "created read from the brief's Created line")
+        check("### Step 3: Present the duty as the owner" in (read_text(show.resume_file) or ""), "standing next.md carries the standing rules")
+        check(refused("new", "--standing", "nocadence", "--description", "x", "--duty", "y"), "--standing without --cadence is refused")
+        check(refused("new", "--standing", "show", "--cadence", "daily", "--description", "x", "--duty", "y"), "a second standing project with the same slug is refused")
+        check(refused("new", "--name", "mixed", "--description", "x", "--goal", "y", "--cadence", "daily"), "--cadence on a project is refused")
+
+        # Cadence math: expected cycle days strictly between the last unit and today.
+        mon, tue, thu = date(2026, 10, 26), date(2026, 10, 27), date(2026, 10, 29)
+        check(overdue_days("daily", mon, thu) == 2 and overdue_days("daily", date(2026, 10, 28), thu) == 0, "daily: yesterday is on time, Mon to Thu is 2 overdue")
+        check(overdue_days("daily", thu, thu) == 0, "daily: a unit today is on time")
+        check(overdue_days("mon-sat", date(2026, 10, 24), tue) == 1, "mon-sat: Sunday is not a cycle day")
+        check(overdue_days("weekdays", date(2026, 10, 23), tue) == 1, "weekdays: the weekend is not a cycle day")
+        check(overdue_days("weekly", date(2026, 10, 20), tue) == 0 and overdue_days("weekly", date(2026, 10, 20), thu) == 2, "weekly: due seven days after the last unit")
+
+        # Units: the newest unit is the last kept cycle.
+        three_ago = date.fromordinal(date.today().toordinal() - 3)
+        ten_ago = date.fromordinal(date.today().toordinal() - 10)
+        for day in (ten_ago, three_ago):
+            unit = show.path / "units" / day.strftime("%Y-%m") / day.isoformat()
+            unit.mkdir(parents=True)
+            (unit / "log.md").write_text(f"# {day.isoformat()}\n", encoding="utf-8")
+        check(show.last_unit() == (three_ago.isoformat(), three_ago), "last unit is the newest unit folder")
+        listing = json.loads(capture("list", "--json"))
+        row = next(r for r in listing["projects"] if r["folder"] == "standing/show")
+        check(row["kind"] == "standing" and row["cadence"] == "daily" and row["overdue_days"] == 2 and row["progress_percent"] is None,
+              "list --json: standing, daily, overdue 2, no progress")
+        check(row["setup_ticked"] == 0 and row["setup_total"] == 3 and row["idle_days"] == 3, "list --json: setup 0/3, idle from the last unit")
+
+        # A standing project never completes.
+        check(refused("move", "standing/show", "--to", "completed"), "move --to completed is refused for a standing project")
+        check(ws.find("standing/show").state == "active", "the refused move changed nothing")
+
+        # Sub-projects of a standing project stay dated folders at the top level, and nest at any depth.
+        run("new", "--name", "edit-tools", "--description", "Tools for the edit.", "--goal", "Faster edits.", "--parent", "standing/show")
+        sub_project = only("edit-tools")
+        check(sub_project.parent_folder == "standing/show", "sub-project names standing/show as its parent")
+        check("[standing/show](../standing/show/)" in (read_text(sub_project.readme) or ""), "the Parent line links to the standing project")
+        check(f"[{sub_project.folder}](../../{sub_project.folder}/)" in (read_text(show.readme) or ""), "the standing project's table links down to the sub-project")
+        run("new", "--name", "clip-cutter", "--description", "One tool.", "--goal", "Cut clips.", "--parent", sub_project.folder)
+        sub_sub = only("clip-cutter")
+        check(sub_sub.parent_folder == sub_project.folder, "a sub-project of a sub-project links to its parent")
+        check(links_resolve(show) and links_resolve(sub_project) and links_resolve(sub_sub), "standing and sub-project links resolve")
+        lines = capture("list").splitlines()
+        show_line = next((i for i, line in enumerate(lines) if line.startswith("standing/show ")), -1)
+        check(show_line != -1 and "standing · daily · last unit" in lines[show_line] and "overdue 2 d · setup 0/3" in lines[show_line],
+              "list prints the standing line with cadence, last unit, overdue and setup")
+        check(show_line == 2, "standing projects are listed first")
+        check(lines[show_line + 1].startswith(f"  {sub_project.folder} "), "the sub-project nests under the standing project")
+        check(lines[show_line + 2].startswith(f"    {sub_sub.folder} "), "a sub-project of a sub-project nests one level more")
+        check(any(line.startswith(f"  {child.folder} ") for line in lines), "an ordinary sub-project still nests under its parent")
+
+        # Shelving a standing project moves it to .shelved/standing/<slug>/ and repairs every link.
+        before_shelve = {p: read_text(p) for p in ws.projects_dir.rglob("*") if p.is_file()}
+        check(refused("move", "standing/show", "--to", "shelved", "--reason", "Pause."), "shelving is refused while sub-projects are active")
+        run("move", sub_sub.folder, "--to", "on-hold", "--reason", "Parent paused.", "--resume-when", "Show resumes.")
+        run("move", sub_project.folder, "--to", "on-hold", "--reason", "Parent paused.", "--resume-when", "Show resumes.")
+        run("move", "standing/show", "--to", "shelved", "--reason", "Testing a pause.")
+        shelved = ws.find("standing/show")
+        check(shelved.state == "shelved" and shelved.path == ws.state_dir("shelved") / STANDING_DIR / "show", "shelved to .shelved/standing/show/")
+        check(not (ws.projects_dir / STANDING_DIR).exists(), "the emptied standing/ folder is removed")
+        check("Status: Shelved" in (read_text(shelved.readme) or ""), "shelved banner written")
+        held_sub = ws.find(sub_project.folder)
+        check(links_resolve(shelved) and links_resolve(held_sub) and links_resolve(ws.find(sub_sub.folder)), "links resolve after shelving")
+        check(f"`{shelved.rel}/README.md`" in (read_text(held_sub.resume_file) or ""), "the sub-project's parent paths point at the shelved folder")
+        listing = json.loads(capture("list", "--all", "--json"))
+        check(any(r["folder"] == "standing/show" and r["state"] == "shelved" for r in listing["projects"]), "list --all shows the shelved standing project")
+        run("move", "standing/show", "--to", "active")
+        run("move", sub_project.folder, "--to", "active")
+        run("move", sub_sub.folder, "--to", "active")
+        after_restore = {p: read_text(p) for p in ws.projects_dir.rglob("*") if p.is_file()}
+        differences = {p for p in before_shelve if before_shelve[p] != after_restore.get(p)}
+        check(not differences, f"standing round trip restores every byte; differs: {sorted(str(p) for p in differences)[:3]}")
+
+        # refresh writes the standing rules into standing projects and the normal rules into the rest.
+        show = ws.find("standing/show")
+        show.resume_file.write_text((read_text(show.resume_file) or "").replace("### Step 3: Present the duty as the owner", "### Step 3: Edited"), encoding="utf-8")
+        run("refresh", "--all")
+        standing_next, normal_next = read_text(show.resume_file) or "", read_text(only("foo").resume_file) or ""
+        check("### Step 3: Present the duty as the owner" in standing_next and "Present status as the owner" not in standing_next, "refresh restores the standing rules")
+        check("Present status as the owner" in normal_next and "Present the duty" not in normal_next, "refresh keeps the normal rules in a normal project")
+
         # A folder without the marker blocks is not ours: the CLI stops instead of guessing.
         stranger = ws.projects_dir / "20250101.01.stranger"
         stranger.mkdir()
@@ -1012,19 +1409,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    new = sub.add_parser("new", parents=[common], help="create a project or, with --parent, a sub-project")
-    new.add_argument("--name", required=True, help="kebab-case slug; the date and sequence prefix are added")
+    new = sub.add_parser("new", parents=[common], help="create a project, a sub-project (--parent), or a standing project (--standing)")
+    new.add_argument("--name", help="kebab-case slug; the date and sequence prefix are added")
+    new.add_argument("--standing", metavar="SLUG", help="create a standing project at standing/<slug>/: a duty that never completes")
     new.add_argument("--description", required=True, help="one or two sentences")
-    new.add_argument("--goal", required=True, help="what done looks like at the highest level")
+    new.add_argument("--goal", help="what done looks like at the highest level (required for a project)")
     new.add_argument("--done", help="comma-separated definition-of-done items")
+    new.add_argument("--cadence", choices=list(CADENCES), help="standing only: how often a cycle is due")
+    new.add_argument("--duty", help="standing only: the condition kept true, in one or two sentences")
+    new.add_argument("--loop", help="standing only: what one cycle is")
+    new.add_argument("--setup", help="standing only: comma-separated one-time setup items")
     new.add_argument("--scope", help="what is in and out, free text or bullets")
     new.add_argument("--repos", help="comma-separated workspace folder names of the repositories touched (default: this repository)")
     new.add_argument("--owner", help="named owner; creates owners/<name>.md from the starter if missing")
-    new.add_argument("--parent", help="parent project folder; makes this a sub-project")
+    new.add_argument("--parent", help="parent project folder (or standing/<slug>); makes this a sub-project")
     new.set_defaults(func=cmd_new)
 
-    move = sub.add_parser("move", parents=[common], help="move a project between lifecycle states and repair every reference")
-    move.add_argument("folder", help="project folder name (not a path)")
+    move = sub.add_parser("move", parents=[common], help="move a project between lifecycle states and repair every reference (a standing project never completes)")
+    move.add_argument("folder", help="project folder name, or standing/<slug> (not a path)")
     move.add_argument("--to", required=True, choices=list(STATES.keys()))
     move.add_argument("--reason", help="why (required for on-hold and shelved)")
     move.add_argument("--resume-when", help="what has to happen before it resumes (required for on-hold)")
@@ -1040,7 +1442,7 @@ def build_parser() -> argparse.ArgumentParser:
     listing.set_defaults(func=cmd_list)
 
     refresh = sub.add_parser("refresh", parents=[common], help="re-sync the rules of engagement block from the skill's template")
-    refresh.add_argument("folder", nargs="?", help="project folder name")
+    refresh.add_argument("folder", nargs="?", help="project folder name, or standing/<slug>")
     refresh.add_argument("--all", action="store_true", help="every active project")
     refresh.set_defaults(func=cmd_refresh)
 
@@ -1051,9 +1453,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = build_parser().parse_args(argv)
-    if getattr(args, "folder", None) and ("/" in args.folder or args.folder.startswith(".")):
-        fail(f"give the bare folder name, not a path: '{args.folder}'")
+    for name in ("folder", "parent"):
+        value = getattr(args, name, None)
+        if value and not _is_folder_name(value):
+            fail(f"give the bare folder name (or standing/<slug>), not a path: '{value}'")
     args.func(args)
+
+
+def _is_folder_name(value: str) -> bool:
+    """A project folder name as the CLI accepts it: `YYYYMMDD.NN[.sp].slug`,
+    `standing/<slug>`, or a standing project's bare slug. Never a path."""
+    if value.startswith(f"{STANDING_DIR}/"):
+        return bool(STANDING_SLUG.match(value[len(STANDING_DIR) + 1:]))
+    return "/" not in value and not value.startswith(".")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@
       "name": "projects",
       "displayName": "Projects",
       "description": "Persistent memory for work that spans more than one agent session: each project carries its brief, a one-file resume (next.md), plans, session changelogs, decisions, and learnings, plus an owner character the agent becomes at resume. No credentials required.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "./",
       "license": "MIT",
       "homepage": "https://github.com/swarupdonepudi/skills",

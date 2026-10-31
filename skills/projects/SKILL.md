@@ -1,10 +1,10 @@
 ---
 name: projects
-description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
+description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; sets up standing, recurring, or never-ending work (a daily show, a weekly loop, an issue queue) as a standing project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
 license: MIT
 metadata:
   author: swarupdonepudi
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Projects
@@ -19,6 +19,7 @@ You are the mechanism. The CLI does the mechanical parts (folders, moves, link r
 _projects/
   YYYYMMDD.NN.slug/          active project
   YYYYMMDD.NN.sp.slug/       active sub-project, flat beside its parent, linked by content
+  standing/<slug>/           active standing project: a duty that never completes
   .completed/  .on-hold/  .shelved/     lifecycle folders, created on first use
   owners/                    how the agent works here (optional)
   README.md                  written once on first use
@@ -52,11 +53,16 @@ An adopter shapes how you work on their projects by writing `_projects/owners/de
 | "wrap up"; the plan's final step; the work for today is done | Tick met done-when items, update `next.md`, write the changelog, copy every plan from this session, run the knowledge check, run `refresh`, commit with a conventional message | [references/wrap-up.md](references/wrap-up.md) |
 | "complete", "pause", "put on hold", "shelve", "reactivate" | Confirm the reason (and resume condition for hold), run `move`, report | [references/lifecycle.md](references/lifecycle.md) |
 | A piece of the project is big enough to run on its own | Propose a sub-project; run `new --parent` | [references/sub-projects.md](references/sub-projects.md) |
+| Work that never ends: "every day", "every week", a queue that always refills | Propose a standing project; run `new --standing` | [references/standing.md](references/standing.md) |
 | Something worth remembering surfaces mid-session | Ask before writing to `decisions/` or `learnings/` | [references/knowledge.md](references/knowledge.md) |
 | "what's on my plate"; "which projects are stale" | Run `list`, lead with the stalest | [references/lifecycle.md](references/lifecycle.md) |
 | Code lives in other repositories | Name them in the brief; never write machine paths | [references/multi-repo.md](references/multi-repo.md) |
 
 Patterns adopters have grown on top of the default (a workforce of named owners, quick notes, proof ledgers, commit locks): [references/extending.md](references/extending.md).
+
+## Standing projects
+
+Some work never completes: a daily show, a weekly distribution loop, a standing duty to answer issues. Make it a standing project at `_projects/standing/<slug>/` (`new --standing <slug> --cadence ...`). Its brief states a duty kept true and a cadence instead of a goal and a done-when list. Each cycle writes a unit folder, `units/YYYY-MM/<unit>/`, and `next.md` stays fixed size. It is measured by whether each cycle was kept, never by completion: it can be held or shelved, never completed. Everything that differs (layout, units, cadence and overdue, resume, wrap-up, sub-projects, the owner's rule): [references/standing.md](references/standing.md).
 
 ## The CLI
 
@@ -64,16 +70,17 @@ Patterns adopters have grown on top of the default (a workforce of named owners,
 
 ```bash
 projects.py new --name <slug> --description "..." --goal "..." [--done "a,b,c"] [--scope "..."] [--repos "repo-a,repo-b"] [--owner <name>] [--parent <folder>]
+projects.py new --standing <slug> --cadence daily|mon-sat|weekdays|weekly --description "..." --duty "..." [--loop "..."] [--setup "a,b,c"] [--scope "..."] [--repos "..."] [--owner <name>]
 projects.py move <folder> --to completed|on-hold|shelved|active [--reason "..."] [--resume-when "..."] [--dry-run] [--force]
 projects.py list [--all] [--stale DAYS] [--owner <name>] [--json]
 projects.py refresh <folder> | --all
 projects.py selftest
 ```
 
-- `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent.
-- `move` works between any two states. It moves the folder, sets or clears the status banner in the brief and `next.md`, updates the sub-project's row in its parent, and repairs every reference in `_projects/`: repo-relative paths by boundary-safe literal replacement, relative links by recomputing where they pointed. It refuses to archive a project with active sub-projects unless `--force`. `--dry-run` prints every change and writes nothing. Requires `--reason` for on-hold and shelved, `--resume-when` for on-hold.
-- `list` shows active projects stalest first with owner, progress (ticked done-when items over total), last activity (newest changelog), and idle days; `--all` adds the lifecycle folders; `--json` for you.
-- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template, so every project runs the current protocol. Wrap-up runs it on the current project.
+- `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent. With `--standing` it creates `standing/<slug>/` from the standing templates, with `units/` and `playbooks/`; a sub-project names it with `--parent standing/<slug>`.
+- `move` works between any two states. It moves the folder, sets or clears the status banner in the brief and `next.md`, updates the sub-project's row in its parent, and repairs every reference in `_projects/`: repo-relative paths by boundary-safe literal replacement, relative links by recomputing where they pointed. It refuses to archive a project with active sub-projects unless `--force`, and refuses to complete a standing project. `--dry-run` prints every change and writes nothing. Requires `--reason` for on-hold and shelved, `--resume-when` for on-hold.
+- `list` shows standing projects first (cadence, last unit, on time or overdue, setup), then active projects stalest first with owner, progress (ticked done-when items over total), last activity (newest changelog), and idle days. Sub-projects nest under their parent at any depth. `--all` adds the lifecycle folders; `--json` for you.
+- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template (the standing template for a standing project), so every project runs the current protocol. Wrap-up runs it on the current project.
 
 The CLI rewrites only what it owns: the text inside its marker blocks and the paths a move invalidates. A folder without the marker blocks was not created by this skill; `move` and `refresh` say so and stop.
 
@@ -82,7 +89,7 @@ The CLI rewrites only what it owns: the text inside its marker blocks and the pa
 - **Never start work on resume.** Read, present status with progress, offer exactly three options, wait for the pick. Even when the next step is obvious.
 - **Every plan ends with the wrap-up.** Plan in the host's plan mode when it has one; the last step is always the full wrap-up and a conventional commit. Approving the plan approves the session; run it to the commit hash.
 - **Every session ends with a changelog, and every plan is kept.** Short sessions get short changelogs; no session gets none. Every plan created this session is copied into `plans/`.
-- **Progress is derived, never stored.** It is the count of ticked items under `## Done when` in the brief. Tick a box when an item is met; state the count at both ends of the session; never write a percentage anywhere else.
+- **Progress is derived, never stored.** It is the count of ticked items under `## Done when` in the brief. Tick a box when an item is met; state the count at both ends of the session; never write a percentage anywhere else. A standing project has no progress: state its last unit and whether it is on time.
 - **Plan before executing.** Get the plan approved, then act. A plan is a map: re-verify what it cites against the code before building on it.
 - **`next.md` is state, changelogs are history.** Never paste a session narrative into `next.md`; one line in the session log, the detail in the changelog.
 - **Knowledge folders are sparse.** Ask before writing to `decisions/` or `learnings/`. The bar: high impact, still true in a month, non-obvious, reusable.

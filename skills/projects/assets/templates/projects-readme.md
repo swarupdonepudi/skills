@@ -12,6 +12,7 @@ Drag its `next.md` into a conversation. The agent becomes the project's owner, c
 _projects/
   YYYYMMDD.NN.slug/          active project
   YYYYMMDD.NN.sp.slug/       active sub-project (flat beside its parent, linked by content)
+  standing/<slug>/           standing project: a duty that never completes, one unit folder per kept cycle
   .completed/                finished, still resumable
   .on-hold/                  paused with a written resume condition
   .shelved/                  deferred indefinitely

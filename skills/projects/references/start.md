@@ -2,6 +2,8 @@
 
 A project is for work that will take more than one conversation. If the work fits in this session, do it; do not make a project for it.
 
+If the work never ends (a daily show, a weekly loop, a queue that always refills), it is a standing project: a duty kept true, with a cadence instead of a done-when list. Draft it the same way, with the duty in place of the goal, and create it with `new --standing <slug> --cadence ...`. See [standing.md](standing.md).
+
 ## 1. Draft the brief from what you already know
 
 Do not interview the human field by field. You have the conversation and the codebase; draft the brief from them and ask only for what you cannot infer, usually one or two things: the name, and what done looks like. Then show the draft and ask for a yes.

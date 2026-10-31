@@ -4,7 +4,7 @@ The resume file, `next.md`, carries its own rules of engagement, and they govern
 
 ## When `next.md` is in the conversation
 
-Follow its rules of engagement in order and completely:
+Follow its rules of engagement in order and completely. A standing project's `next.md` carries the standing version of these rules: it reads only the newest units and changelogs, and Step 3 presents the duty, the last unit, and whether it is on time instead of progress (see [standing.md](standing.md)).
 
 0. **Become the owner.** Resolve the owner file (Owner line, `owners/default.md`, then this skill's `references/owner.md`), read it, and work as that person.
 1. **Check the checkout.** For this repository and every repository named in the brief's `Repositories` section: `git fetch --quiet && git status --short --branch | head -1`. Behind or diverged means stop and tell the human. Do not read on.

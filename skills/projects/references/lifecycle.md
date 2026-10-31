@@ -9,6 +9,8 @@ Four states, one command, every move reversible.
 | on-hold | `_projects/.on-hold/` | paused with a written reason and resume condition |
 | shelved | `_projects/.shelved/` | deferred indefinitely; may never resume |
 
+A standing project lives in a `standing/` folder inside the state folder (`_projects/standing/<slug>/`, `_projects/.on-hold/standing/<slug>/`, `_projects/.shelved/standing/<slug>/`) and is moved by `move standing/<slug> ...`. It is never completed: `move --to completed` refuses, because a duty is kept, paused, or stopped, never done. See [standing.md](standing.md).
+
 ```bash
 python3 <skill>/scripts/projects.py move <folder> --to completed
 python3 <skill>/scripts/projects.py move <folder> --to on-hold --reason "..." --resume-when "..."
@@ -52,7 +54,7 @@ python3 <skill>/scripts/projects.py list --stale 7  # idle a week or more
 python3 <skill>/scripts/projects.py list --all      # every state
 ```
 
-The table shows each project's owner, progress (ticked done-when items over total, as a percentage), last activity, and days idle. Lead with the stalest active project and what stands between it and done. An owner treats a project idle for a week as the most important thing in the list.
+The table shows each project's owner, progress (ticked done-when items over total, as a percentage), last activity, and days idle. Standing projects come first, each with its cadence, last unit, and whether it is on time or overdue by how many cycle days, plus setup x/y when it has a setup list. Sub-projects nest under their parent, at any depth. Lead with an overdue standing project, then the stalest active project and what stands between it and done. An owner treats a project idle for a week, or a duty that missed a cycle, as the most important thing in the list.
 
 ## Moving between archived states
 
