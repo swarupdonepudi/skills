@@ -36,6 +36,7 @@ YYYYMMDD.NN.slug/
   next.md                the state
   plans/001-initial-plan.md
   changelogs/            001-slug.md, 002-slug.md, ... one per session
+  clock.md               the work clock: one row per sitting
   decisions/             created on first entry
   learnings/             created on first entry
 ```
@@ -75,6 +76,24 @@ Keep `next.md` short. If it passes about 150 lines, something in it belongs in a
 
 `NNN-slug.md`, numbered by session, frontmatter `date`, `session`, `progress` (ticked done-when items at that moment, `"3/7"`), `tags`, `summary`; body `## What was done`, `## Decisions made`, `## What is pending`. See [wrap-up.md](wrap-up.md) for sizing.
 
+### `clock.md`, the time
+
+Written empty by `new` (and by `refresh` when it is missing). One table, one row per sitting:
+
+```
+| Start | End | Minutes | Active | Changelog | Note |
+|-------|-----|---------|--------|-----------|------|
+| 2026-11-13 06:55+05:30 | 23:42+05:30 | 1007 | 170 | 001 | idle 07:10-20:50 |
+```
+
+- **Start** is the session's first message, **End** its wrap-up, both with their UTC offset. An End on a later day carries its date.
+- **Minutes** is what the sitting took. `clock add` computes it once; nothing recomputes a stored value, so a hand-written row may hold net time.
+- **Active**, when set, is the time actually worked (the session sat idle). Totals count Active when it is set, else Minutes.
+- **Changelog** is the number of the changelog the sitting fed. Several sittings may share one; a changelog may have no row.
+- A `~` before a number marks an estimate. A row from before times were kept may carry Minutes alone, with its date in Note.
+
+`clock start` prints the start stamp and writes nothing; `clock add` appends the row at wrap-up; `clock` and `list` derive the totals, which are written nowhere. A session counts in the one project whose changelog it writes; a sub-project's time does not roll up into its parent.
+
 ### `decisions/` and `learnings/`
 
 Created on first entry, never empty. `decisions/NNN-slug.md`: context, decision, alternatives, consequences. `learnings/NNN-slug.md` with `kind: guideline | wrong-assumption | dont-do`: lesson, evidence, rule going forward. See [knowledge.md](knowledge.md) for the bar.
@@ -85,8 +104,8 @@ Paths inside `_projects/` are written relative to the repository root (`_project
 
 ## Marker blocks
 
-The two marker pairs above are the only text the CLI rewrites inside a file it did not just create. A folder whose `README.md` or `next.md` lacks them was not created by this skill; `move` and `refresh` say so and stop rather than guess.
+The two marker pairs above are the only text the CLI rewrites inside a file it did not just create; beyond them it only appends rows to `clock.md`. A folder whose `README.md` or `next.md` lacks them was not created by this skill; `move` and `refresh` say so and stop rather than guess.
 
 ## Templates
 
-Everything `new` writes comes from `assets/templates/`: `README.md`, `next.md`, `rules-of-engagement.md`, `plan.md`, `projects-readme.md`, `owner.md`, and for a standing project `standing-README.md`, `standing-next.md`, and `standing-rules-of-engagement.md`. The agent uses `changelog.md`, `decision.md`, and `learning.md` as the shape for what it writes by hand; the `$placeholders` in them are for the agent to fill.
+Everything `new` writes comes from `assets/templates/`: `README.md`, `next.md`, `rules-of-engagement.md`, `plan.md`, `clock.md`, `projects-readme.md`, `owner.md`, and for a standing project `standing-README.md`, `standing-next.md`, and `standing-rules-of-engagement.md`. The agent uses `changelog.md`, `decision.md`, and `learning.md` as the shape for what it writes by hand; the `$placeholders` in them are for the agent to fill.

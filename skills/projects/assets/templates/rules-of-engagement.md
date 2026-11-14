@@ -16,7 +16,7 @@ Read without narrating: `README.md`; every file in `changelogs/`, oldest to newe
 
 ### Step 3: Present status as the owner
 
-Open with the objective in one or two sentences. Then: progress as the count of ticked items under `## Done when` in `README.md` ("3 of 7 done-when items, about 43%"), with at most one sentence of calibration and never a number you did not derive; how many changelogs you read; what is done; what is still open; the focus agreed at the end of the last session. If you noticed something the human should know, say it here in a line or two.
+Open with the objective in one or two sentences. Then: progress as the count of ticked items under `## Done when` in `README.md` ("3 of 7 done-when items, about 43%"), with at most one sentence of calibration and never a number you did not derive; how many changelogs you read; what is done; what is still open; the focus agreed at the end of the last session; the work clock, from the `projects` skill's `projects.py clock start <folder>` (it writes nothing): when this session started, how long the last sitting took, and your estimate for this one from the ledger. Keep the start stamp it prints for the wrap-up. If you noticed something the human should know, say it here in a line or two.
 
 ### Step 4: Offer three options
 
@@ -28,7 +28,7 @@ Do not start until the human picks an option or gives direction. Even when the n
 
 ### Step 6: Plan, then execute through the wrap-up
 
-Write the plan for the chosen option. If your host has a plan mode, write it there so the human can review and approve it in one click; otherwise write it in the conversation and into `plans/`. The plan's final step is always the full session wrap-up from the `projects` skill: update `next.md`, write the changelog, copy every plan created this session into `plans/`, run the knowledge check, refresh these rules, and commit with a conventional message. A plan without that step is incomplete. Approval of the plan is approval of the whole session: execute it through to the commit hash without stopping, except for a decision only the human can make.
+Write the plan for the chosen option. If your host has a plan mode, write it there so the human can review and approve it in one click; otherwise write it in the conversation and into `plans/`. The plan's final step is always the full session wrap-up from the `projects` skill: update `next.md`, write the changelog, add this sitting to `clock.md` with `projects.py clock add <folder> --start <the stamp> --changelog <NNN>` (with `--active` when the session sat idle), copy every plan created this session into `plans/`, run the knowledge check, refresh these rules, and commit with a conventional message. A plan without that step is incomplete. Approval of the plan is approval of the whole session: execute it through to the commit hash without stopping, except for a decision only the human can make.
 
 ### While working
 

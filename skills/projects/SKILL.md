@@ -1,10 +1,10 @@
 ---
 name: projects
-description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; sets up standing, recurring, or never-ending work (a daily show, a weekly loop, an issue queue) as a standing project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
+description: Persistent memory for work that spans more than one agent session. Each project is a folder under _projects/ that carries its brief (README.md), a one-file resume (next.md), plans, one changelog per session, a work clock (clock.md), decisions, and learnings, plus an owner character the agent becomes at resume. Use when the user starts work that will take several sessions or asks to start or create a project; resumes or continues a project; drags a next.md from a _projects/ folder into the conversation; says wrap up or end the session; asks to complete, pause, hold, shelve, or reactivate a project; spawns a sub-project; sets up standing, recurring, or never-ending work (a daily show, a weekly loop, an issue queue) as a standing project; or asks what is on their plate or which projects are stale. Not for the ordinary word "project" (a codebase, a Next.js project, a build target).
 license: MIT
 metadata:
   author: swarupdonepudi
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Projects
@@ -25,7 +25,7 @@ _projects/
   README.md                  written once on first use
 ```
 
-Inside a project, six files, each with one job, nothing written twice:
+Inside a project, seven files, each with one job, nothing written twice:
 
 | File | Job | Written by |
 |---|---|---|
@@ -33,6 +33,7 @@ Inside a project, six files, each with one job, nothing written twice:
 | `next.md` | The **state**: rules of engagement, current status, active plan, next-session focus, open questions, one-line session log | `new`; the agent at wrap-up |
 | `plans/NNN-slug.md` | The **intent**: the plan executed against, `status:` in frontmatter | The agent, before executing |
 | `changelogs/NNN-slug.md` | The **history**: what was done, decided, and left pending. One per session, mandatory | The agent at wrap-up |
+| `clock.md` | The **time**: one row per sitting (start, end, minutes, active minutes, the changelog it fed). Totals are derived from it | `new` (empty); `clock add` at wrap-up |
 | `decisions/NNN-slug.md` | The **rationale** for a fork in the road. Created lazily, ask first | The agent, with permission |
 | `learnings/NNN-slug.md` | The **lessons**: `kind: guideline`, `wrong-assumption`, or `dont-do`. Created lazily, ask first | The agent, with permission |
 
@@ -49,8 +50,8 @@ An adopter shapes how you work on their projects by writing `_projects/owners/de
 | The user | You | Read |
 |---|---|---|
 | Starts work that will span sessions; "start a project" | Draft the brief from the conversation, confirm it, run `new`, write `plans/001`, get it approved, stop | [references/start.md](references/start.md) |
-| Drags `next.md` in; "resume X"; "continue the project" | Follow the file's rules of engagement exactly: become the owner, check the checkout, read silently, present status with progress, offer three options, wait for the pick, plan (host plan mode if there is one) with the wrap-up as the last step, execute to the commit | [references/resume.md](references/resume.md) |
-| "wrap up"; the plan's final step; the work for today is done | Tick met done-when items, update `next.md`, write the changelog, copy every plan from this session, run the knowledge check, run `refresh`, commit with a conventional message | [references/wrap-up.md](references/wrap-up.md) |
+| Drags `next.md` in; "resume X"; "continue the project" | Follow the file's rules of engagement exactly: become the owner, check the checkout, read silently, present status with progress and the work clock, offer three options, wait for the pick, plan (host plan mode if there is one) with the wrap-up as the last step, execute to the commit | [references/resume.md](references/resume.md) |
+| "wrap up"; the plan's final step; the work for today is done | Tick met done-when items, update `next.md`, write the changelog, add the sitting to `clock.md`, copy every plan from this session, run the knowledge check, run `refresh`, commit with a conventional message | [references/wrap-up.md](references/wrap-up.md) |
 | "complete", "pause", "put on hold", "shelve", "reactivate" | Confirm the reason (and resume condition for hold), run `move`, report | [references/lifecycle.md](references/lifecycle.md) |
 | A piece of the project is big enough to run on its own | Propose a sub-project; run `new --parent` | [references/sub-projects.md](references/sub-projects.md) |
 | Work that never ends: "every day", "every week", a queue that always refills | Propose a standing project; run `new --standing` | [references/standing.md](references/standing.md) |
@@ -74,15 +75,19 @@ projects.py new --standing <slug> --cadence daily|mon-sat|weekdays|weekly --desc
 projects.py move <folder> --to completed|on-hold|shelved|active [--reason "..."] [--resume-when "..."] [--dry-run] [--force]
 projects.py list [--all] [--stale DAYS] [--owner <name>] [--json]
 projects.py refresh <folder> | --all
+projects.py clock start <folder> [--at "2026-11-14 08:12+05:30"]
+projects.py clock add <folder> --start "<stamp>" [--end "<stamp>"] [--active MIN] [--changelog NNN] [--note "..."]
+projects.py clock <folder> [--json]
 projects.py selftest
 ```
 
 - `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent. With `--standing` it creates `standing/<slug>/` from the standing templates, with `units/` and `playbooks/`; a sub-project names it with `--parent standing/<slug>`.
 - `move` works between any two states. It moves the folder, sets or clears the status banner in the brief and `next.md`, updates the sub-project's row in its parent, and repairs every reference in `_projects/`: repo-relative paths by boundary-safe literal replacement, relative links by recomputing where they pointed. It refuses to archive a project with active sub-projects unless `--force`, and refuses to complete a standing project. `--dry-run` prints every change and writes nothing. Requires `--reason` for on-hold and shelved, `--resume-when` for on-hold.
 - `list` shows standing projects first (cadence, last unit, on time or overdue, setup), then active projects stalest first with owner, progress (ticked done-when items over total), last activity (newest changelog), and idle days. Sub-projects nest under their parent at any depth. `--all` adds the lifecycle folders; `--json` for you.
-- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template (the standing template for a standing project), so every project runs the current protocol. Wrap-up runs it on the current project.
+- `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template (the standing template for a standing project), so every project runs the current protocol, and creates a missing `clock.md`. Wrap-up runs it on the current project. With `--all` it skips, and names, any folder this skill did not create.
+- `clock start` writes nothing: it prints the session's start stamp (with its UTC offset) and the ledger's numbers (last sitting, median, total) for the opening status. `clock add` appends the sitting to `clock.md` at wrap-up, computing the minutes from the stamp; `--active` records the minutes actually worked when the session sat idle. `clock` prints the totals. `list` shows each project's total hours.
 
-The CLI rewrites only what it owns: the text inside its marker blocks and the paths a move invalidates. A folder without the marker blocks was not created by this skill; `move` and `refresh` say so and stop.
+The CLI rewrites only what it owns: the text inside its marker blocks, the paths a move invalidates, and the rows it appends to `clock.md`. A folder without the marker blocks was not created by this skill; `move` and `refresh` say so and stop.
 
 ## Rules that never bend
 
@@ -90,6 +95,7 @@ The CLI rewrites only what it owns: the text inside its marker blocks and the pa
 - **Every plan ends with the wrap-up.** Plan in the host's plan mode when it has one; the last step is always the full wrap-up and a conventional commit. Approving the plan approves the session; run it to the commit hash.
 - **Every session ends with a changelog, and every plan is kept.** Short sessions get short changelogs; no session gets none. Every plan created this session is copied into `plans/`.
 - **Progress is derived, never stored.** It is the count of ticked items under `## Done when` in the brief. Tick a box when an item is met; state the count at both ends of the session; never write a percentage anywhere else. A standing project has no progress: state its last unit and whether it is on time.
+- **Time is recorded, never guessed.** State the clock at both ends of the session from `clock start` and `clock`; add the sitting with `clock add` at every wrap-up. Totals are derived from `clock.md` and written nowhere else.
 - **Plan before executing.** Get the plan approved, then act. A plan is a map: re-verify what it cites against the code before building on it.
 - **`next.md` is state, changelogs are history.** Never paste a session narrative into `next.md`; one line in the session log, the detail in the changelog.
 - **Knowledge folders are sparse.** Ask before writing to `decisions/` or `learnings/`. The bar: high impact, still true in a month, non-obvious, reusable.

@@ -58,9 +58,17 @@ python3 <skill>/scripts/projects.py refresh <folder>
 
 This re-syncs the rules block in `next.md` with this skill's current template. It reports "already current" most of the time; that is fine.
 
-## 7. Commit
+## 7. Add the sitting to the clock, then commit
 
-Commit the session's code changes together with its records: `next.md`, the brief (if boxes were ticked), the changelog, the plans, and any knowledge entries. Follow the repository's own branching, pushing, and review conventions; do not push, branch, or merge on your own initiative if the repository does not already work that way.
+First the clock. `clock.md` gets one row for this sitting:
+
+```bash
+python3 <skill>/scripts/projects.py clock add <folder> --start "<the stamp clock start printed>" --changelog <NNN>
+```
+
+The end is now and the minutes are computed from the stamp. When the session sat idle (the human stepped away for an hour), add `--active <minutes actually worked>`, read from the gaps you can see in the conversation or the commits; a total counts Active when it is set. If the start stamp was lost (the conversation was compacted), take it from the first message's timestamp. A session that touched two projects adds its row to the one whose changelog it wrote. Two lanes on one project each add their own row; on a merge conflict keep both rows. Without a shell, write the row by hand in the same shape.
+
+Then the commit. Commit the session's code changes together with its records: `next.md`, `clock.md`, the brief (if boxes were ticked), the changelog, the plans, and any knowledge entries. Follow the repository's own branching, pushing, and review conventions; do not push, branch, or merge on your own initiative if the repository does not already work that way.
 
 The message is a conventional commit. The type is the nature of the work (`feat`, `fix`, `refactor`, `docs`, `chore`); the scope is the project slug; the body names the session and what landed:
 
@@ -75,11 +83,11 @@ pagination contract; tests cover the cursor edge cases. Records: changelog
 Three gates, from hard experience:
 
 - Stage the files you touched, by name. Never `git add -A` on a branch other sessions share.
-- Before committing, confirm the staged set contains `next.md`, the new changelog, and every plan from this session. A commit that carries the code but not the records leaves the project lying to the next session.
+- Before committing, confirm the staged set contains `next.md`, `clock.md`, the new changelog, and every plan from this session. A commit that carries the code but not the records leaves the project lying to the next session.
 - After committing, read the commit back (`git show --stat`) against your own list of touched files. "Records written" does not mean "work persisted" until you have seen the hash.
 
 Delete any session-scoped scratch file you created (a progress tracker, a scratch note) before committing; do not delete another session's.
 
 ## 8. Close
 
-End with three lines: the commit hash; progress as ticked done-when items ("now 4 of 7, about 57%") with one sentence of calibration if needed; what the next session should do. Add any hand-off the human owes, with exact steps. Do not reorganize or polish project files during wrap-up; capture state, do not tidy it.
+End with four lines: the commit hash; progress as ticked done-when items ("now 4 of 7, about 57%") with one sentence of calibration if needed; the clock (this sitting's minutes, the project's total from `clock`, and the hours you estimate are left); what the next session should do. Add any hand-off the human owes, with exact steps. Do not reorganize or polish project files during wrap-up; capture state, do not tidy it.

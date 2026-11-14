@@ -21,11 +21,15 @@ The fix is not a bigger context window. It is a place where the project's memory
 
 The framework's earlier versions grew duplicate homes for the same information: a resume file that repeated every session's summary and grew to hundreds of lines, a plan registry that duplicated the filesystem and drifted, task folders beside plan folders. Each duplicate was one more thing that could lie.
 
-The six-file model gives every fact one home: the brief in `README.md`, the state in `next.md`, the history in `changelogs/`, the intent in `plans/`, the rationale in `decisions/`, the lessons in `learnings/`. When you are about to write something, ask which of the six it is; if it is already written somewhere, link to it.
+The seven-file model gives every fact one home: the brief in `README.md`, the state in `next.md`, the history in `changelogs/`, the intent in `plans/`, the time in `clock.md`, the rationale in `decisions/`, the lessons in `learnings/`. When you are about to write something, ask which of the seven it is; if it is already written somewhere, link to it.
 
 ## Why the CLI is small
 
-Folders, moves, link repair, and sequence numbers are mechanical and fragile: they should be done identically every time, by a script that can be tested. Everything else, the brief, the plan, the changelog, the decision to write a learning, is judgment and belongs to the agent. The CLI stays at four operations so that line stays visible.
+Folders, moves, link repair, and sequence numbers are mechanical and fragile: they should be done identically every time, by a script that can be tested. Everything else, the brief, the plan, the changelog, the decision to write a learning, is judgment and belongs to the agent. The CLI stays at five operations so that line stays visible.
+
+## Why time is kept
+
+Progress says how much of the work is done; it cannot say what the rest will cost. A ledger of every sitting's start, end, and minutes can: the human running several projects at once learns how long the last session took, what this one should take, and how many hours are left, from numbers instead of a feeling. The CLI stamps the times so nobody guesses them, and writes the row only at wrap-up, so a session that does no work, crashes, or runs beside another lane never leaves a half-written row.
 
 ## Where it comes from
 

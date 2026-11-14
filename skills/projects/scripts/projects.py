@@ -2,7 +2,7 @@
 """
 projects.py -- the command line behind the `projects` agent skill.
 
-One file, four operations, no dependencies beyond Python 3.9's standard
+One file, five operations, no dependencies beyond Python 3.9's standard
 library. The agent runs it; a person can too.
 
     projects.py new      --name <slug> --description ... --goal ... [--parent <folder>] [--owner <name>]
@@ -10,6 +10,9 @@ library. The agent runs it; a person can too.
     projects.py move     <folder> --to completed|on-hold|shelved|active [--reason ...] [--resume-when ...] [--dry-run]
     projects.py list     [--all] [--stale N] [--owner <name>] [--json]
     projects.py refresh  <folder> | --all
+    projects.py clock    start <folder> [--at T]
+    projects.py clock    add <folder> --start T [--end T] [--active MIN] [--changelog NNN] [--note ...]
+    projects.py clock    <folder> [--json]
     projects.py selftest
 
 Every subcommand accepts --repo-root (default: `git rev-parse --show-toplevel`
@@ -22,13 +25,22 @@ that ground in every file. One surface, one `--help`, one place to fix a bug.
 
 Design notes that matter when changing this file:
 
-* The CLI owns exactly two things inside a project's files: the text between
-  the marker blocks it wrote (rules of engagement, status banner) and the
-  paths and links a move invalidates. Everything else in a project is the
-  agent's and the human's. A folder without the marker blocks is not a
-  project this skill manages; the CLI says so and stops rather than guess.
+* The CLI owns exactly three things inside a project's files: the text between
+  the marker blocks it wrote (rules of engagement, status banner), the paths
+  and links a move invalidates, and the rows it appends to `clock.md`.
+  Everything else in a project is the agent's and the human's. A folder
+  without the marker blocks is not a project this skill manages; the CLI says
+  so and stops rather than guess.
 * Progress is derived, never stored: the count of ticked boxes under
   `## Done when` in the brief. `list` computes it; nothing writes it.
+* Time is the second measure. `clock.md` is a ledger with one row per
+  sitting (start, end, minutes, active minutes, the changelog it fed, a
+  note). `clock start` writes nothing: it prints the start stamp and the
+  ledger's numbers for the opening status. `clock add` appends the row at
+  wrap-up, so a session that does no work, a crash, or a second lane on the
+  same project never leaves a half-written row. Totals are derived on read
+  (Active when set, else Minutes) and written nowhere. A stored Minutes is
+  never recomputed: older rows often hold net time, not end minus start.
 * A standing project is a duty that never completes. It lives at
   `<state dir>/standing/<slug>/` (no date, no sequence), its `folder` is
   `standing/<slug>`, and that is also how a Parent line and the command line
@@ -50,6 +62,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -79,6 +92,7 @@ STATES: Dict[str, str] = {
 STATUS_WORDS = {"active": "Active", "completed": "Completed", "on-hold": "On hold", "shelved": "Shelved"}
 
 RESUME_FILE = "next.md"
+CLOCK_FILE = "clock.md"
 OWNERS_DIR = "owners"
 
 # Standing projects live in this folder inside each state folder:
@@ -110,6 +124,15 @@ CHECKBOX = re.compile(r"^- \[(?P<mark>[ xX])\] ", re.MULTILINE)
 
 MARKDOWN_LINK = re.compile(r"\]\((?P<target>[^)\s]+)\)")
 FRONTMATTER_DATE = re.compile(r"^date:\s*[\"']?(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+# The work clock's ledger table. Columns are read by position; only the first
+# three words of the header are matched, so a hand-widened header still reads.
+CLOCK_HEADER = re.compile(r"^\|\s*Start\s*\|\s*End\s*\|\s*Minutes\s*\|", re.IGNORECASE)
+CLOCK_SEPARATOR = re.compile(r"^\|[\s:|-]+\|\s*$")
+CLOCK_MINUTES = re.compile(r"^~?\s*(\d+)")
+CLOCK_CELL_SPLIT = re.compile(r"(?<!\\)\|")
+CLOCK_START_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+CLOCK_ACTIONS = ("start", "add", "show")
 
 BINARY_EXTENSIONS = frozenset({
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".pdf", ".zip", ".gz", ".tar",
@@ -218,6 +241,140 @@ def overdue_days(cadence: str, last: date, on: date) -> int:
 
 
 # --------------------------------------------------------------------------
+# The work clock: one ledger row per sitting in clock.md
+# --------------------------------------------------------------------------
+
+@dataclass
+class ClockRow:
+    start: str
+    end: str
+    minutes: Optional[int]
+    active: Optional[int]
+    changelog: str
+    note: str
+
+    @property
+    def counted(self) -> Optional[int]:
+        """The minutes a total counts: Active when set, else Minutes."""
+        return self.active if self.active is not None else self.minutes
+
+
+@dataclass
+class ClockLedger:
+    lines: List[str]
+    header_index: Optional[int]
+    insert_index: int
+    rows: List[ClockRow]
+    unreadable: int
+
+
+@dataclass
+class ClockSummary:
+    sittings: int
+    minutes: int
+    last_minutes: Optional[int]
+    last_date: str
+    median: Optional[float]
+
+
+def _clock_minutes(cell: str) -> Optional[int]:
+    """`90`, `~30` (an estimate), or `1007 (wall)` read as a number; else None."""
+    match = CLOCK_MINUTES.match(cell.strip())
+    return int(match.group(1)) if match else None
+
+
+def read_clock(path: Path) -> Optional[ClockLedger]:
+    """Parse clock.md. None when the file is missing. A file without the
+    ledger header comes back with header_index None and no rows: it is shown
+    as `-`, never an error, and `clock add` refuses to guess where to write."""
+    text = read_text(path)
+    if text is None:
+        return None
+    lines = text.splitlines()
+    header_index = next((i for i, line in enumerate(lines) if CLOCK_HEADER.match(line.strip())), None)
+    if header_index is None:
+        return ClockLedger(lines, None, len(lines), [], 0)
+    rows: List[ClockRow] = []
+    unreadable = 0
+    insert_index = header_index + 1
+    for index in range(header_index + 1, len(lines)):
+        line = lines[index].strip()
+        if not line.startswith("|"):
+            break
+        insert_index = index + 1
+        if CLOCK_SEPARATOR.match(line):
+            continue
+        cells = [cell.strip() for cell in CLOCK_CELL_SPLIT.split(line)[1:-1]]
+        cells += [""] * (6 - len(cells))
+        minutes, active = _clock_minutes(cells[2]), _clock_minutes(cells[3])
+        if minutes is None and active is None:
+            unreadable += 1
+            continue
+        rows.append(ClockRow(cells[0], cells[1], minutes, active, cells[4], " | ".join(cells[5:]).strip(" |")))
+    return ClockLedger(lines, header_index, insert_index, rows, unreadable)
+
+
+def summarize_clock(ledger: Optional[ClockLedger]) -> Optional[ClockSummary]:
+    """Totals derived from the ledger, or None when there is no readable ledger."""
+    if ledger is None or ledger.header_index is None:
+        return None
+    counted = [row.counted for row in ledger.rows if row.counted is not None]
+    last = ledger.rows[-1] if ledger.rows else None
+    date_match = CLOCK_START_DATE.match(last.start) if last else None
+    return ClockSummary(
+        sittings=len(counted),
+        minutes=sum(counted),
+        last_minutes=last.counted if last else None,
+        last_date=date_match.group(1) if date_match else "",
+        median=statistics.median(counted) if counted else None,
+    )
+
+
+def format_duration(minutes: int) -> str:
+    """`45 min`, `3 h 05 min`."""
+    return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min"
+
+
+def _utc_offset(moment: datetime) -> str:
+    offset = moment.utcoffset()
+    total = int(offset.total_seconds() // 60) if offset is not None else 0
+    sign = "+" if total >= 0 else "-"
+    total = abs(total)
+    return f"{sign}{total // 60:02d}:{total % 60:02d}"
+
+
+def parse_moment(value: str, flag: str) -> datetime:
+    """`2026-11-14 08:12+05:30`, `2026-11-14T08:12+05:30` or a trailing `Z`.
+    A time with no offset is taken in this machine's zone. Seconds are dropped:
+    the ledger keeps minutes."""
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        fail(f"{flag} must look like 2026-11-14 08:12+05:30: got '{value}'")
+        raise  # unreachable
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    return moment.replace(second=0, microsecond=0)
+
+
+def now_moment() -> datetime:
+    return datetime.now().astimezone().replace(second=0, microsecond=0)
+
+
+def format_start(moment: datetime) -> str:
+    return f"{moment:%Y-%m-%d %H:%M}{_utc_offset(moment)}"
+
+
+def format_end(start: datetime, end: datetime) -> str:
+    """An end on the start's calendar day is written as its time; a later day carries its date."""
+    stamp = f"{end:%H:%M}" if end.date() == start.date() else f"{end:%Y-%m-%d %H:%M}"
+    return f"{stamp}{_utc_offset(end)}"
+
+
+# --------------------------------------------------------------------------
 # The workspace: a repo root and its projects directory
 # --------------------------------------------------------------------------
 
@@ -291,6 +448,19 @@ class Project:
     @property
     def resume_file(self) -> Path:
         return self.path / RESUME_FILE
+
+    @property
+    def clock_file(self) -> Path:
+        return self.path / CLOCK_FILE
+
+    def clock_summary(self) -> Optional[ClockSummary]:
+        return summarize_clock(read_clock(self.clock_file))
+
+    def has_markers(self) -> bool:
+        """Whether this folder was created by the projects skill: its resume
+        file carries the rules-of-engagement marker block."""
+        text = read_text(self.resume_file) or ""
+        return ROE_START in text and ROE_END in text
 
     @property
     def owner(self) -> Optional[str]:
@@ -561,6 +731,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     (project_path / "plans" / "001-initial-plan.md").write_text(render(
         "plan.md", date=today(), number="001", title="Initial plan", objective=args.goal.strip(),
     ), encoding="utf-8")
+    project.clock_file.write_text(render("clock.md", slug=args.name), encoding="utf-8")
 
     owner_created = _ensure_owner_file(workspace, args.owner)
 
@@ -574,10 +745,18 @@ def cmd_new(args: argparse.Namespace) -> None:
     print("  next.md              the resume file; drag it into a conversation to continue")
     print("  plans/001-initial-plan.md   pending approval")
     print("  changelogs/          one entry per session, written at wrap-up")
+    print("  clock.md             the work clock: one row per sitting, added at wrap-up")
     if parent:
         print(f"  parent {parent.folder}: sub-project table and next file updated")
     if owner_created:
         print(f"  owner file created from the starter: {posix(owner_created.relative_to(workspace.repo_root))}")
+    _print_session_one_clock(project)
+
+
+def _print_session_one_clock(project: "Project") -> None:
+    """Session 1 starts with `new`: print the start stamp the wrap-up's `clock add` needs."""
+    started = format_start(now_moment())
+    print(f"  session 1 started {started}; at wrap-up: projects.py clock add {project.folder} --start \"{started}\" --changelog 001")
 
 
 def _new_standing(workspace: Workspace, args: argparse.Namespace) -> None:
@@ -646,6 +825,7 @@ def _new_standing(workspace: Workspace, args: argparse.Namespace) -> None:
         "plan.md", date=today(), number="001", title="Initial plan",
         objective=f"Set up the duty and keep its first cycle. The duty: {args.duty.strip()}",
     ), encoding="utf-8")
+    project.clock_file.write_text(render("clock.md", slug=slug), encoding="utf-8")
 
     owner_created = _ensure_owner_file(workspace, args.owner)
 
@@ -658,8 +838,10 @@ def _new_standing(workspace: Workspace, args: argparse.Namespace) -> None:
     print("  playbooks/           the routine, one file per procedure")
     print("  units/YYYY-MM/<unit>/   one folder per kept cycle")
     print("  changelogs/          one entry per session, written at wrap-up")
+    print("  clock.md             the work clock: one row per sitting, added at wrap-up")
     if owner_created:
         print(f"  owner file created from the starter: {posix(owner_created.relative_to(workspace.repo_root))}")
+    _print_session_one_clock(project)
 
 
 def _ensure_owner_file(workspace: Workspace, owner: Optional[str]) -> Optional[Path]:
@@ -998,6 +1180,9 @@ def cmd_list(args: argparse.Namespace) -> None:
             "created": project.created.isoformat() if project.created else "",
             "resume": posix(project.resume_file.relative_to(workspace.repo_root)),
         }
+        clock = project.clock_summary()
+        row["clock_minutes"] = clock.minutes if clock and clock.sittings else None
+        row["clock_sittings"] = clock.sittings if clock else None
         if project.is_standing:
             # A standing project is measured by its cycles, not by completion:
             # idle days count from the last unit, and overdue from the cadence.
@@ -1055,7 +1240,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 by_parent.setdefault(row["parent"], []).append(row)
             else:
                 top.append(row)
-        header = f"{'project':<52} {'state':<10} {'owner':<12} {'progress':<12} {'last activity':<14} idle"
+        header = f"{'project':<52} {'state':<10} {'owner':<12} {'progress':<12} {'clock':<8} {'last activity':<14} idle"
         print(header)
         print("-" * len(header))
         printed: set = set()
@@ -1091,7 +1276,14 @@ def _standing_summary(row: dict) -> str:
         parts.append("on time" if overdue == 0 else f"overdue {overdue} d")
     if row["setup_total"]:
         parts.append(f"setup {row['setup_ticked']}/{row['setup_total']}")
+    if row["clock_minutes"]:
+        parts.append(f"clock {_clock_hours(row)}")
     return " · ".join(parts)
+
+
+def _clock_hours(row: dict) -> str:
+    """The clock column: total hours worked, `-` when nothing is recorded."""
+    return f"{row['clock_minutes'] / 60:.1f}h" if row["clock_minutes"] else "-"
 
 
 def _print_row(row: dict, indent: str) -> None:
@@ -1101,7 +1293,7 @@ def _print_row(row: dict, indent: str) -> None:
         return
     idle = f"{row['idle_days']}d" if row["idle_days"] is not None else "-"
     progress = f"{row['done_ticked']}/{row['done_total']} {row['progress_percent']}%" if row["done_total"] else "-"
-    print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {progress:<12} {row['last_activity'] or '-':<14} {idle}")
+    print(f"{name:<52} {row['state']:<10} {row['owner'] or '-':<12} {progress:<12} {_clock_hours(row):<8} {row['last_activity'] or '-':<14} {idle}")
 
 
 # --------------------------------------------------------------------------
@@ -1120,21 +1312,161 @@ def cmd_refresh(args: argparse.Namespace) -> None:
             fail(f"project not found in any state: {args.folder}")
         targets = [found]
 
-    changed = unchanged = 0
+    changed = unchanged = skipped = 0
     for project in targets:
+        # Check the folder's shape before writing anything in it. One named
+        # folder that is not ours stops the command; with --all it is skipped
+        # and reported, so one old-shape folder cannot block the rest.
         text = read_text(project.resume_file)
+        problem = None
+        updated = None
         if text is None:
-            fail(f"{project.folder} has no {RESUME_FILE}; this folder was not created by the projects skill")
-        updated = replace_between(text, ROE_START, ROE_END, render_rules_of_engagement(project.is_sub_project, project.is_standing))
-        if updated is None:
-            fail(f"{project.folder}/{RESUME_FILE} has no rules-of-engagement marker block; this folder was not created by the projects skill")
-        if updated == text:
-            unchanged += 1
+            problem = f"{project.folder} has no {RESUME_FILE}; this folder was not created by the projects skill"
+        else:
+            updated = replace_between(text, ROE_START, ROE_END, render_rules_of_engagement(project.is_sub_project, project.is_standing))
+            if updated is None:
+                problem = f"{project.folder}/{RESUME_FILE} has no rules-of-engagement marker block; this folder was not created by the projects skill"
+        if problem:
+            if not args.all:
+                fail(problem)
+            skipped += 1
+            print(f"  skipped {project.folder}: not created by the projects skill (no rules-of-engagement block in {RESUME_FILE})")
             continue
-        project.resume_file.write_text(updated, encoding="utf-8")
-        changed += 1
-        print(f"  {project.folder}: rules of engagement refreshed")
-    print(f"refreshed {changed}, already current {unchanged}")
+        touched = []
+        if updated != text:
+            project.resume_file.write_text(updated, encoding="utf-8")
+            touched.append("rules of engagement refreshed")
+        if not project.clock_file.exists():
+            project.clock_file.write_text(render("clock.md", slug=project.slug), encoding="utf-8")
+            touched.append(f"{CLOCK_FILE} created")
+        if touched:
+            changed += 1
+            print(f"  {project.folder}: {', '.join(touched)}")
+        else:
+            unchanged += 1
+    summary = f"refreshed {changed}, already current {unchanged}"
+    print(f"{summary}, skipped {skipped}" if skipped else summary)
+
+
+# --------------------------------------------------------------------------
+# clock
+# --------------------------------------------------------------------------
+
+def cmd_clock(args: argparse.Namespace) -> None:
+    """`clock start <folder>` prints, `clock add <folder>` appends one row,
+    `clock <folder>` (or `clock show <folder>`) prints the totals."""
+    workspace = Workspace(resolve_repo_root(args.repo_root), args.projects_dir)
+    words = args.words
+    if len(words) == 1:
+        action, folder = "show", words[0]
+    elif len(words) == 2:
+        action, folder = words
+    else:
+        fail("usage: clock start <folder> | clock add <folder> --start T | clock <folder>")
+        return
+    if action not in CLOCK_ACTIONS:
+        fail(f"clock takes start, add or show before the folder: got '{action}'")
+    if not _is_folder_name(folder):
+        fail(f"give the bare folder name (or standing/<slug>), not a path: '{folder}'")
+    project = workspace.find(folder)
+    if project is None:
+        fail(f"project not found in any state: {folder}")
+
+    misplaced = {
+        "start": [("--start", args.start), ("--end", args.end), ("--active", args.active), ("--changelog", args.changelog), ("--note", args.note), ("--json", args.json or None)],
+        "add": [("--at", args.at), ("--json", args.json or None)],
+        "show": [("--at", args.at), ("--start", args.start), ("--end", args.end), ("--active", args.active), ("--changelog", args.changelog), ("--note", args.note)],
+    }[action]
+    for flag, value in misplaced:
+        if value is not None:
+            fail(f"{flag} does not apply to clock {action}")
+
+    if action == "start":
+        _clock_start(project, parse_moment(args.at, "--at") if args.at else now_moment())
+    elif action == "add":
+        _clock_add(project, args)
+    else:
+        _clock_show(project, args.json)
+
+
+def _clock_numbers(summary: Optional[ClockSummary]) -> str:
+    if summary is None or not summary.sittings:
+        return "no sittings recorded yet"
+    last = f"last sitting {format_duration(summary.last_minutes)}" if summary.last_minutes is not None else "last sitting -"
+    if summary.last_date:
+        last += f" ({summary.last_date})"
+    median = format_duration(int(round(summary.median))) if summary.median is not None else "-"
+    return f"{last} · median {median} · total {format_duration(summary.minutes)} over {summary.sittings} sittings"
+
+
+def _clock_start(project: Project, started: datetime) -> None:
+    """Writes nothing. The start stamp lives in the conversation until wrap-up."""
+    stamp = format_start(started)
+    print(f"session started {stamp}")
+    print(f"  {_clock_numbers(project.clock_summary())}")
+    print(f"  at wrap-up: projects.py clock add {project.folder} --start \"{stamp}\" --changelog NNN")
+
+
+def _clock_add(project: Project, args: argparse.Namespace) -> None:
+    if not project.has_markers():
+        fail(f"{project.folder} was not created by the projects skill (no rules-of-engagement block in {RESUME_FILE}); write its clock by hand")
+    if not args.start:
+        fail("clock add needs --start: the stamp `clock start` printed at the beginning of the session")
+    start = parse_moment(args.start, "--start")
+    end = parse_moment(args.end, "--end") if args.end else now_moment()
+    if end <= start:
+        fail(f"the end ({format_start(end)}) is not after the start ({format_start(start)})")
+    minutes = int(round((end - start).total_seconds() / 60))
+    if args.active is not None and not 0 <= args.active <= minutes:
+        fail(f"--active must be between 0 and the sitting's {minutes} minutes: got {args.active}")
+    if args.changelog is not None and "|" in args.changelog:
+        fail("--changelog is the changelog's number, such as 004")
+
+    if not project.clock_file.exists():
+        project.clock_file.write_text(render("clock.md", slug=project.slug), encoding="utf-8")
+    ledger = read_clock(project.clock_file)
+    if ledger is None or ledger.header_index is None:
+        fail(f"{project.rel}/{CLOCK_FILE} has no ledger table (a `| Start | End | Minutes | ...` header); fix it by hand, then add again")
+        return
+    start_cell, end_cell = format_start(start), format_end(start, end)
+    if any(row.start == start_cell and row.end == end_cell for row in ledger.rows):
+        fail(f"this sitting is already in {CLOCK_FILE}: {start_cell} to {end_cell}")
+
+    note = (args.note or "").replace("|", "\\|").replace("\n", " ").strip()
+    active = "" if args.active is None else str(args.active)
+    row = f"| {start_cell} | {end_cell} | {minutes} | {active} | {args.changelog or ''} | {note} |"
+    lines = ledger.lines[: ledger.insert_index] + [row] + ledger.lines[ledger.insert_index:]
+    project.clock_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    worked = f", {args.active} active" if args.active is not None else ""
+    print(f"added to {project.rel}/{CLOCK_FILE}: {start_cell} to {end_cell}, {minutes} min{worked}")
+    print(f"  {_clock_numbers(project.clock_summary())}")
+
+
+def _clock_show(project: Project, as_json: bool) -> None:
+    ledger = read_clock(project.clock_file)
+    summary = summarize_clock(ledger)
+    if as_json:
+        print(json.dumps({
+            "folder": project.folder,
+            "file": f"{project.rel}/{CLOCK_FILE}",
+            "readable": summary is not None,
+            "sittings": summary.sittings if summary else 0,
+            "minutes": summary.minutes if summary else 0,
+            "last_minutes": summary.last_minutes if summary else None,
+            "last_date": summary.last_date if summary else "",
+            "median_minutes": summary.median if summary else None,
+            "unreadable_rows": ledger.unreadable if ledger else 0,
+        }, indent=2))
+        return
+    if ledger is None:
+        print(f"{project.folder}: no {CLOCK_FILE} yet (`refresh` creates it)")
+        return
+    if summary is None:
+        print(f"{project.folder}: {CLOCK_FILE} has no ledger table")
+        return
+    print(f"{project.folder}: {_clock_numbers(summary)}")
+    if ledger.unreadable:
+        print(f"  {ledger.unreadable} row(s) without a readable Minutes or Active value were not counted")
 
 
 # --------------------------------------------------------------------------
@@ -1378,6 +1710,58 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         check("### Step 3: Present the duty as the owner" in standing_next and "Present status as the owner" not in standing_next, "refresh restores the standing rules")
         check("Present status as the owner" in normal_next and "Present the duty" not in normal_next, "refresh keeps the normal rules in a normal project")
 
+        # The work clock: `new` writes an empty ledger, `clock start` prints and
+        # writes nothing, `clock add` appends one row per sitting at wrap-up.
+        run("new", "--name", "timed", "--description", "Keeps time.", "--goal", "Prove the clock.")
+        timed = only("timed")
+        clock_file = timed.clock_file
+        empty = timed.clock_summary()
+        check(clock_file.is_file() and empty is not None and empty.sittings == 0, "new writes an empty clock.md")
+        before = read_text(clock_file)
+        out = capture("clock", "start", timed.folder, "--at", "2026-03-01T09:00+05:30")
+        check("session started 2026-03-01 09:00+05:30" in out and "no sittings recorded yet" in out, "clock start prints the stamp and the ledger's numbers")
+        check(read_text(clock_file) == before, "clock start writes nothing")
+        run("clock", "add", timed.folder, "--start", "2026-03-01 09:00+05:30", "--end", "2026-03-01 10:30+05:30",
+            "--changelog", "001", "--note", "first | sitting")
+        rows = read_clock(clock_file).rows
+        check(len(rows) == 1 and rows[0].minutes == 90 and rows[0].end == "10:30+05:30" and rows[0].changelog == "001",
+              "clock add computes 90 minutes and writes a same-day end as its time")
+        check(rows[0].note == "first \\| sitting", "a pipe in the note is escaped and the row still reads as six cells")
+        run("clock", "add", timed.folder, "--start", "2026-03-02 23:30+05:30", "--end", "2026-03-03 01:00+05:30", "--active", "60")
+        run("clock", "add", timed.folder, "--start", "2026-03-04 08:00-05:00", "--end", "2026-03-04 08:45-05:00")
+        rows = read_clock(clock_file).rows
+        check(rows[1].end == "2026-03-03 01:00+05:30" and rows[1].minutes == 90 and rows[1].active == 60,
+              "a sitting past midnight writes its end's date; Active is kept beside Minutes")
+        check(rows[2].start == "2026-03-04 08:00-05:00" and rows[2].minutes == 45, "another offset is kept as written")
+        check(refused("clock", "add", timed.folder, "--start", "2026-03-05 10:00+05:30", "--end", "2026-03-05 09:00+05:30"),
+              "an end before its start is refused")
+        check(refused("clock", "add", timed.folder, "--start", "2026-03-01 09:00+05:30", "--end", "2026-03-01 10:30+05:30"),
+              "a sitting already in the ledger is refused")
+        check(refused("clock", "add", timed.folder, "--start", "2026-03-06 09:00+05:30", "--end", "2026-03-06 09:30+05:30", "--active", "45"),
+              "Active above the sitting's minutes is refused")
+        check(refused("clock", "start", timed.folder, "--note", "x"), "a flag that belongs to another action is refused")
+        check(len(read_clock(clock_file).rows) == 3, "refused adds change nothing")
+        # Rows written by hand: an estimate, minutes with no times, and one with no number at all.
+        clock_file.write_text((read_text(clock_file) or "") + "| | | ~30 | | | 2026-02-01, before times were kept |\n| x | y | n/a | | | unreadable |\n",
+                              encoding="utf-8")
+        summary = timed.clock_summary()
+        check(summary.sittings == 4 and summary.minutes == 90 + 60 + 45 + 30, "totals count Active when set, else Minutes; a ~ estimate counts")
+        check(summary.last_minutes == 30 and summary.median == 52.5, "last sitting and median are derived from the ledger")
+        shown = json.loads(capture("clock", timed.folder, "--json"))
+        check(shown["minutes"] == 225 and shown["sittings"] == 4 and shown["unreadable_rows"] == 1, "clock --json reports totals and the unreadable row")
+        listing = json.loads(capture("list", "--json"))
+        row = next(r for r in listing["projects"] if r["folder"] == timed.folder)
+        check(row["clock_minutes"] == 225 and row["clock_sittings"] == 4, "list --json carries the clock")
+        check(any(line.startswith(timed.folder) and " 3.8h " in line for line in capture("list").splitlines()), "list prints the clock in hours")
+        clock_file.unlink()
+        run("refresh", timed.folder)
+        check(clock_file.is_file() and timed.clock_summary().sittings == 0, "refresh recreates a missing clock.md")
+        clock_file.write_text("# Work clock\n\nno table here\n", encoding="utf-8")
+        row = next(r for r in json.loads(capture("list", "--json"))["projects"] if r["folder"] == timed.folder)
+        check(row["clock_minutes"] is None and timed.clock_summary() is None, "a ledger without its table shows no clock, never an error")
+        check(refused("clock", "add", timed.folder, "--start", "2026-03-07 09:00+05:30", "--end", "2026-03-07 10:00+05:30"),
+              "clock add refuses a ledger without its table rather than guess")
+
         # A folder without the marker blocks is not ours: the CLI stops instead of guessing.
         stranger = ws.projects_dir / "20250101.01.stranger"
         stranger.mkdir()
@@ -1390,6 +1774,12 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
             except SystemExit as exc:
                 check(exc.code == 1, f"{argv[0]} stops with a clear error on a marker-less folder")
         check((stranger / RESUME_FILE).read_text(encoding="utf-8").endswith("no markers here\n"), "marker-less files are never touched")
+        out = capture("refresh", "--all")
+        check("skipped 20250101.01.stranger" in out and "skipped 1" in out, "refresh --all skips a folder it did not create and says so")
+        check(not (stranger / CLOCK_FILE).exists(), "refresh --all writes nothing in a skipped folder")
+        check(refused("clock", "add", "20250101.01.stranger", "--start", "2026-03-01 09:00+05:30", "--end", "2026-03-01 10:00+05:30"),
+              "clock add refuses a folder it did not create")
+        check("session started" in capture("clock", "start", "20250101.01.stranger"), "clock start still prints for any folder: it writes nothing")
 
     print(f"selftest ok: {checks} checks passed")
 
@@ -1401,7 +1791,7 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="projects.py",
-        description="Create, move, list and refresh projects managed by the `projects` agent skill.",
+        description="Create, move, list, refresh and clock projects managed by the `projects` agent skill.",
     )
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--repo-root", help="repository that holds the projects folder (default: git rev-parse --show-toplevel)")
@@ -1445,6 +1835,20 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("folder", nargs="?", help="project folder name, or standing/<slug>")
     refresh.add_argument("--all", action="store_true", help="every active project")
     refresh.set_defaults(func=cmd_refresh)
+
+    clock = sub.add_parser(
+        "clock", parents=[common],
+        help="the work clock: `clock start <folder>` prints the start stamp, `clock add <folder>` appends the sitting at wrap-up, `clock <folder>` shows the totals",
+    )
+    clock.add_argument("words", nargs="+", metavar="[start|add|show] folder", help="an action, then the project folder (or standing/<slug>); no action means show")
+    clock.add_argument("--at", help="start only: the start stamp instead of now, such as 2026-11-14 08:12+05:30")
+    clock.add_argument("--start", help="add only: the stamp `clock start` printed")
+    clock.add_argument("--end", help="add only: the end stamp (default: now)")
+    clock.add_argument("--active", type=int, metavar="MIN", help="add only: the minutes actually worked when the sitting sat idle")
+    clock.add_argument("--changelog", metavar="NNN", help="add only: the number of the changelog this sitting fed")
+    clock.add_argument("--note", help="add only: a short note")
+    clock.add_argument("--json", action="store_true", help="show only")
+    clock.set_defaults(func=cmd_clock)
 
     selftest = sub.add_parser("selftest", parents=[common], help="run the lifecycle end to end in a temporary tree")
     selftest.set_defaults(func=cmd_selftest)

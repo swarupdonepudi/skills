@@ -23,6 +23,7 @@ _projects/standing/<slug>/
   playbooks/             the routine, one file per procedure
   units/YYYY-MM/<unit>/  one folder per kept cycle
   plans/  changelogs/    as in any project
+  clock.md               the work clock, as in any project: one row per sitting
   decisions/  learnings/ created on first entry
 ```
 
@@ -103,7 +104,9 @@ The standing wrap-up is the normal one from [wrap-up.md](wrap-up.md) with three 
 2. **Replace `## Current status`** in `next.md`: the last unit, when the next cycle is due, the active plan. Do not add a session log row.
 3. **Write the changelog** with `cycle:` (the unit id, such as `"2026-10-31"`) in the frontmatter in place of `progress:`. A session that kept no cycle writes `cycle: none`.
 
-Close with the commit hash, the unit logged, and when the next cycle is due. There is no progress line.
+The clock is unchanged: the sitting is added to `clock.md` before the commit.
+
+Close with the commit hash, the unit logged, when the next cycle is due, and the sitting's minutes. There is no progress line.
 
 ## Sub-projects
 

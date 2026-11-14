@@ -9,7 +9,7 @@ Agent skills by [Swarup Donepudi](https://github.com/swarupdonepudi), in the [Ag
 
 | Skill | What it does |
 | --- | --- |
-| [`skills/projects`](skills/projects/SKILL.md) | Persistent memory for work that spans more than one agent session. Each project is a folder that carries its brief, a one-file resume, plans, one changelog per session, decisions, and learnings, plus an owner character the agent becomes at resume. The list of active folders is your honest to-do list. Work that never ends (a daily show, a weekly loop) runs as a standing project, measured by whether each cycle was kept. |
+| [`skills/projects`](skills/projects/SKILL.md) | Persistent memory for work that spans more than one agent session. Each project is a folder that carries its brief, a one-file resume, plans, one changelog per session, a work clock, decisions, and learnings, plus an owner character the agent becomes at resume. The list of active folders is your honest to-do list. Work that never ends (a daily show, a weekly loop) runs as a standing project, measured by whether each cycle was kept. |
 
 ## Install
 
@@ -46,7 +46,7 @@ It drafts the brief from the conversation, asks only for what it cannot infer, c
 
 > Wrap up.
 
-It ticks the done-when items you met, updates the project's state, writes the session's changelog, copies the plan, and commits with a proper message. Tomorrow, in a fresh conversation, drag the project's `next.md` in. The agent becomes the project's owner, checks the checkout is current, reads every changelog silently, tells you where things stand ("3 of 7 done, about 43%"), offers three options with one recommended, and waits for your pick. Then it plans, and the plan's last step is always the wrap-up, so you can approve and walk away; when you come back the work is committed. No re-explaining.
+It ticks the done-when items you met, updates the project's state, writes the session's changelog, records how long the sitting took, copies the plan, and commits with a proper message. Tomorrow, in a fresh conversation, drag the project's `next.md` in. The agent becomes the project's owner, checks the checkout is current, reads every changelog silently, tells you where things stand ("3 of 7 done, about 43%; the last session took 2 h 10 min"), offers three options with one recommended, and waits for your pick. Then it plans, and the plan's last step is always the wrap-up, so you can approve and walk away; when you come back the work is committed. No re-explaining.
 
 When the work is done:
 

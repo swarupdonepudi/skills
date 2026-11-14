@@ -27,7 +27,7 @@ python3 <skill>/scripts/projects.py new \
   [--owner <name>]
 ```
 
-`new` prints the folder it created. On a repository's first project it also creates `_projects/` and its README. If `--owner` names an owner that has no file yet, `new` creates `_projects/owners/<name>.md` from the starter and tells you; offer to fill it in with the human.
+`new` prints the folder it created, and the start stamp of session 1: this conversation is the project's first sitting, so keep the stamp for the wrap-up's `clock add`. On a repository's first project it also creates `_projects/` and its README. If `--owner` names an owner that has no file yet, `new` creates `_projects/owners/<name>.md` from the starter and tells you; offer to fill it in with the human.
 
 Then open the new `README.md` and put anything from the brief that the flags did not carry (constraints, nuance in scope) into its sections. The brief should read as the human approved it.
 
