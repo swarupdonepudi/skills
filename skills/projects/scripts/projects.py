@@ -1520,13 +1520,13 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         root = Path(tmp)
         ws = Workspace(root, DEFAULT_PROJECTS_DIR)
 
-        run("new", "--name", "foo", "--description", "First project.", "--goal", "Prove the CLI.", "--owner", "parker")
+        run("new", "--name", "foo", "--description", "First project.", "--goal", "Prove the CLI.", "--owner", "riley")
         run("new", "--name", "foo-bar", "--description", "Shares a prefix with foo.", "--goal", "Catch prefix bugs.")
         foo, foo_bar = only("foo"), only("foo-bar")
         check(foo.parts.group("seq") == "01" and foo_bar.parts.group("seq") == "02", "sequence numbers increment")
         check((ws.projects_dir / "README.md").is_file(), "projects README bootstrapped")
-        check((ws.projects_dir / OWNERS_DIR / "parker.md").is_file(), "owner file created from starter")
-        check(foo.owner == "parker", "owner line read back")
+        check((ws.projects_dir / OWNERS_DIR / "riley.md").is_file(), "owner file created from starter")
+        check(foo.owner == "riley", "owner line read back")
 
         run("new", "--name", "child", "--description", "A sub-project.", "--goal", "Inherit from foo.", "--parent", foo.folder)
         child = only("child")

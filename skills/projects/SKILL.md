@@ -59,7 +59,7 @@ An adopter shapes how you work on their projects by writing `_projects/owners/de
 | "what's on my plate"; "which projects are stale" | Run `list`, lead with the stalest | [references/lifecycle.md](references/lifecycle.md) |
 | Code lives in other repositories | Name them in the brief; never write machine paths | [references/multi-repo.md](references/multi-repo.md) |
 
-Patterns adopters have grown on top of the default (a workforce of named owners, quick notes, proof ledgers, commit locks): [references/extending.md](references/extending.md).
+Patterns adopters have grown on top of the default (several named owners, quick notes, proof ledgers, commit locks): [references/extending.md](references/extending.md).
 
 ## Standing projects
 

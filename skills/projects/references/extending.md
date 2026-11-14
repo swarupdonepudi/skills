@@ -4,7 +4,7 @@ The default is deliberately small. These are patterns that grew in heavy use (hu
 
 Work that never completes (a daily show, an issue queue) is not an extension: standing projects are built in. See [standing.md](standing.md).
 
-## A workforce of named owners
+## Several named owners
 
 Several named owners, each with a file in `_projects/owners/`, each responsible for a slice of the portfolio (product, infrastructure, support, content). `list --owner <name>` becomes each owner's to-do list. The next step, if you want it, is an owner "hello" session: the owner scans its projects, leads with the stalest, and proposes the day's work before being asked. Keep owner files short; a character is a page, not a manual.
 
