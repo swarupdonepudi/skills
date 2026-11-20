@@ -10,7 +10,7 @@ Drag its `next.md` into a conversation. The agent becomes the project's owner, c
 
 ```
 _projects/
-  00000000.00.standing.slug/ standing project: a duty that never completes, one unit folder per kept cycle; sorted first
+  00000000.standing.slug/    standing project: a duty that never completes, one unit folder per kept cycle; sorted first
   YYYYMMDD.NN.slug/          active project
   YYYYMMDD.NN.sp.slug/       active sub-project (flat beside its parent, linked by content)
   .completed/                finished, still resumable

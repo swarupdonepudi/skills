@@ -54,7 +54,7 @@ When the work is done:
 
 The folder moves to `_projects/.completed/`, every reference is repaired, and your active list is one shorter. Pause with "put this on hold", defer with "shelve this", and ask "what's on my plate" to see the portfolio, stalest first.
 
-Some work never completes: a daily show, a weekly distribution loop, an issue queue. Say "set up a standing project for it" and the agent creates `_projects/00000000.00.standing.<slug>/`, sorted above every dated project, with a duty and a cadence instead of a done-when list. Each kept cycle writes a unit folder, the resume file stays the same size forever, and `list` tells you whether the duty is on time or how many days it is overdue.
+Some work never completes: a daily show, a weekly distribution loop, an issue queue. Say "set up a standing project for it" and the agent creates `_projects/00000000.standing.<slug>/`, sorted above every dated project, with a duty and a cadence instead of a done-when list. Each kept cycle writes a unit folder, the resume file stays the same size forever, and `list` tells you whether the duty is on time or how many days it is overdue.
 
 ## Shaping how the agent works
 

@@ -33,7 +33,7 @@ Progress says how much of the work is done; it cannot say what the rest will cos
 
 ## Why standing projects sort first
 
-A duty that never ends (a daily show, a weekly loop) is the work most easily forgotten, because nothing about it ever finishes. Its folder is `00000000.00.standing.<slug>`, beside the dated projects: the zero date sorts every duty above them, so the never-ending work is the first thing anyone sees in `_projects/`, and the prefix names what it is. An earlier version kept duties in a `standing/` folder, where they were one level down and out of sight.
+A duty that never ends (a daily show, a weekly loop) is the work most easily forgotten, because nothing about it ever finishes. Its folder is `00000000.standing.<slug>`, beside the dated projects: the zero date sorts every duty above them, so the never-ending work is the first thing anyone sees in `_projects/`, and the prefix names what it is. An earlier version kept duties in a `standing/` folder, where they were one level down and out of sight.
 
 ## Where it comes from
 

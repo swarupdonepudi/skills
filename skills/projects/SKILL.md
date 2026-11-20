@@ -4,7 +4,7 @@ description: Persistent memory for work that spans more than one agent session. 
 license: MIT
 metadata:
   author: swarupdonepudi
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # Projects
@@ -17,7 +17,7 @@ You are the mechanism. The CLI does the mechanical parts (folders, moves, link r
 
 ```
 _projects/
-  00000000.00.standing.slug/ active standing project: a duty that never completes, sorted first
+  00000000.standing.slug/    active standing project: a duty that never completes, sorted first
   YYYYMMDD.NN.slug/          active project
   YYYYMMDD.NN.sp.slug/       active sub-project, flat beside its parent, linked by content
   .completed/  .on-hold/  .shelved/     lifecycle folders, created on first use
@@ -63,7 +63,7 @@ Patterns adopters have grown on top of the default (several named owners, quick 
 
 ## Standing projects
 
-Some work never completes: a daily show, a weekly distribution loop, a standing duty to answer issues. Make it a standing project at `_projects/00000000.00.standing.<slug>/` (`new --standing <slug> --cadence ...`). The zero date keeps every duty at the top of the folder list, never hidden a level down. Its brief states a duty kept true and a cadence instead of a goal and a done-when list. Each cycle writes a unit folder, `units/YYYY-MM/<unit>/`, and `next.md` stays fixed size. It is measured by whether each cycle was kept, never by completion: it can be held or shelved, never completed. Everything that differs (layout, units, cadence and overdue, resume, wrap-up, sub-projects, the owner's rule): [references/standing.md](references/standing.md).
+Some work never completes: a daily show, a weekly distribution loop, a standing duty to answer issues. Make it a standing project at `_projects/00000000.standing.<slug>/` (`new --standing <slug> --cadence ...`). The zero date keeps every duty at the top of the folder list, never hidden a level down. Its brief states a duty kept true and a cadence instead of a goal and a done-when list. Each cycle writes a unit folder, `units/YYYY-MM/<unit>/`, and `next.md` stays fixed size. It is measured by whether each cycle was kept, never by completion: it can be held or shelved, never completed. Everything that differs (layout, units, cadence and overdue, resume, wrap-up, sub-projects, the owner's rule): [references/standing.md](references/standing.md).
 
 ## The CLI
 
@@ -81,7 +81,7 @@ projects.py clock <folder> [--json]
 projects.py selftest
 ```
 
-- `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent. With `--standing` it creates `00000000.00.standing.<slug>/` from the standing templates, with `units/` and `playbooks/`; a sub-project names it with `--parent <slug>`.
+- `new` bootstraps `_projects/` (with a README, written once) on first use, picks the next sequence number, renders the brief, `next.md`, and `plans/001-initial-plan.md`, creates `owners/<name>.md` from a starter when `--owner` names a new owner, and registers a sub-project with its parent. With `--standing` it creates `00000000.standing.<slug>/` from the standing templates, with `units/` and `playbooks/`; a sub-project names it with `--parent <slug>`.
 - `move` works between any two states. It moves the folder, sets or clears the status banner in the brief and `next.md`, updates the sub-project's row in its parent, and repairs every reference in `_projects/`: repo-relative paths by boundary-safe literal replacement, relative links by recomputing where they pointed. It refuses to archive a project with active sub-projects unless `--force`, and refuses to complete a standing project. `--dry-run` prints every change and writes nothing. Requires `--reason` for on-hold and shelved, `--resume-when` for on-hold.
 - `list` shows standing projects first (cadence, last unit, on time or overdue, setup), then active projects stalest first with owner, progress (ticked done-when items over total), last activity (newest changelog), and idle days. Sub-projects nest under their parent at any depth. `--all` adds the lifecycle folders; `--json` for you.
 - `refresh` re-syncs the rules of engagement block in `next.md` from this skill's template (the standing template for a standing project), so every project runs the current protocol, and creates a missing `clock.md`. Wrap-up runs it on the current project. With `--all` it skips, and names, any folder this skill did not create.

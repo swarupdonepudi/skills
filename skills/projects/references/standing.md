@@ -17,7 +17,7 @@ The test: ask "when is this done?" If the honest answer is "never, there is alwa
 ## Layout
 
 ```
-_projects/00000000.00.standing.<slug>/
+_projects/00000000.standing.<slug>/
   README.md              the brief: kind, cadence, duty, the loop, setup
   next.md                the state; fixed size, never grows
   playbooks/             the routine, one file per procedure
@@ -27,7 +27,7 @@ _projects/00000000.00.standing.<slug>/
   decisions/  learnings/ created on first entry
 ```
 
-The folder name is `00000000.00.standing.<slug>`, beside the dated projects. A duty belongs to no single day, so its date is all zeros, and that zero date sorts every standing project above the dated ones: the never-ending work is the first thing anyone sees in `_projects/`, never hidden one folder down. The prefix also says what the folder is. The slug is kebab-case, like any project's. Parent lines and the command line use the folder name (`move 00000000.00.standing.<slug> ...`); the command line takes the bare slug too (`move <slug> ...`).
+The folder name is `00000000.standing.<slug>`, beside the dated projects. A duty belongs to no single day, so its date is all zeros, and that zero date sorts every standing project above the dated ones: the never-ending work is the first thing anyone sees in `_projects/`, never hidden one folder down. The prefix also says what the folder is. The slug is kebab-case, like any project's. Parent lines and the command line use the folder name (`move 00000000.standing.<slug> ...`); the command line takes the bare slug too (`move <slug> ...`).
 
 Create one with:
 
@@ -78,7 +78,7 @@ Overdue days, for the daily kinds, are the expected cycle days strictly after th
 `list` prints each standing project first, in its own lines:
 
 ```
-00000000.00.standing.feed-said-so   active   -   standing · mon-sat · last unit 2026-10-30 · on time · setup 5/7
+00000000.standing.feed-said-so   active   -   standing · mon-sat · last unit 2026-10-30 · on time · setup 5/7
   20261031.01.sp.edit-tools   active   -   1/4 25%   2026-10-31   0d
 ```
 
@@ -86,7 +86,7 @@ Overdue days, for the daily kinds, are the expected cycle days strictly after th
 
 ## States
 
-A standing project is active, on hold, or shelved. It is never completed: `move --to completed` refuses. Pause a duty with `--to on-hold` (with `--reason` and `--resume-when`), and stop it with `--to shelved` (with `--reason`). The folder moves to `.on-hold/00000000.00.standing.<slug>/` or `.shelved/00000000.00.standing.<slug>/`, and every reference is repaired, as for any project. `move --to active` brings it back to `_projects/00000000.00.standing.<slug>/`.
+A standing project is active, on hold, or shelved. It is never completed: `move --to completed` refuses. Pause a duty with `--to on-hold` (with `--reason` and `--resume-when`), and stop it with `--to shelved` (with `--reason`). The folder moves to `.on-hold/00000000.standing.<slug>/` or `.shelved/00000000.standing.<slug>/`, and every reference is repaired, as for any project. `move --to active` brings it back to `_projects/00000000.standing.<slug>/`.
 
 ## Resume
 
@@ -110,7 +110,7 @@ Close with the commit hash, the unit logged, when the next cycle is due, and the
 
 ## Sub-projects
 
-A one-time build inside a duty (a new editing tool, a new channel to open) is a sub-project. It is an ordinary dated folder at the top level of `_projects/`, `YYYYMMDD.NN.sp.<slug>`, with `- **Parent:** [00000000.00.standing.<slug>](../00000000.00.standing.<slug>/)` in its brief:
+A one-time build inside a duty (a new editing tool, a new channel to open) is a sub-project. It is an ordinary dated folder at the top level of `_projects/`, `YYYYMMDD.NN.sp.<slug>`, with `- **Parent:** [00000000.standing.<slug>](../00000000.standing.<slug>/)` in its brief:
 
 ```bash
 python3 <skill>/scripts/projects.py new --name <slug> --description "..." --goal "..." --parent <slug>

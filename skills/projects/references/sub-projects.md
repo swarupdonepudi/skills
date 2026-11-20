@@ -41,7 +41,7 @@ Several agents on sibling sub-projects at once is the intended use. Each commits
 
 ## Under a standing project
 
-A standing project can have sub-projects too: one-time builds beside the duty, such as a new tool or a new channel. They stay ordinary dated folders at the top level of `_projects/`, created with `--parent <slug>`, and their brief links the parent as `- **Parent:** [00000000.00.standing.<slug>](../00000000.00.standing.<slug>/)`. They complete like any project. The standing parent never waits on them and never completes. See [standing.md](standing.md).
+A standing project can have sub-projects too: one-time builds beside the duty, such as a new tool or a new channel. They stay ordinary dated folders at the top level of `_projects/`, created with `--parent <slug>`, and their brief links the parent as `- **Parent:** [00000000.standing.<slug>](../00000000.standing.<slug>/)`. They complete like any project. The standing parent never waits on them and never completes. See [standing.md](standing.md).
 
 ## The parent line
 
