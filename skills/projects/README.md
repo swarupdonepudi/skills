@@ -36,7 +36,7 @@ Say these to your agent, one per sitting:
 - "Let's start a project to migrate the billing service to the new API." The agent drafts the brief, creates the folder, writes the first plan, and waits for approval.
 - "Wrap up." It ticks met done-when items, updates `next.md`, writes the session's changelog, adds the sitting's minutes to `clock.md`, and commits.
 - "Complete this project." The folder moves to `_projects/.completed/` and every reference is repaired.
-- "Set up a standing project for my daily show." Work that never ends gets `_projects/standing/<slug>/`: a duty and a cadence instead of a done-when list, one unit folder per kept cycle, and a `list` line that says whether today's cycle is on time or overdue.
+- "Set up a standing project for my daily show." Work that never ends gets `_projects/00000000.00.standing.<slug>/`, sorted above every dated project: a duty and a cadence instead of a done-when list, one unit folder per kept cycle, and a `list` line that says whether today's cycle is on time or overdue.
 
 To resume, drag the project's `next.md` into a fresh conversation. The full walkthrough is in [Sixty seconds with `projects`](../../README.md#sixty-seconds-with-projects).
 

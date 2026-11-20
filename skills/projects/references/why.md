@@ -31,6 +31,10 @@ Folders, moves, link repair, and sequence numbers are mechanical and fragile: th
 
 Progress says how much of the work is done; it cannot say what the rest will cost. A ledger of every sitting's start, end, and minutes can: the human running several projects at once learns how long the last session took, what this one should take, and how many hours are left, from numbers instead of a feeling. The CLI stamps the times so nobody guesses them, and writes the row only at wrap-up, so a session that does no work, crashes, or runs beside another lane never leaves a half-written row.
 
+## Why standing projects sort first
+
+A duty that never ends (a daily show, a weekly loop) is the work most easily forgotten, because nothing about it ever finishes. Its folder is `00000000.00.standing.<slug>`, beside the dated projects: the zero date sorts every duty above them, so the never-ending work is the first thing anyone sees in `_projects/`, and the prefix names what it is. An earlier version kept duties in a `standing/` folder, where they were one level down and out of sight.
+
 ## Where it comes from
 
 This framework carried 350 or so projects to completion across two companies before it became a skill, run daily by people and agents in monorepos and in personal orchestration repos that steer work across many code repositories. The ideas above are the ones that survived that use; the ones that did not are noted in [extending.md](extending.md) for adopters who want them.

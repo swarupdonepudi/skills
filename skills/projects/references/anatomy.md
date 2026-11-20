@@ -5,12 +5,12 @@
 ```
 _projects/
   README.md                        written once by `new`; an adopter may edit it freely
+  00000000.00.standing.slug/       active standing project: a duty that never completes, sorted first
   YYYYMMDD.NN.slug/                active project
   YYYYMMDD.NN.sp.slug/             active sub-project (flat, linked by content)
-  standing/<slug>/                 active standing project: a duty that never completes
   .completed/YYYYMMDD.NN.slug/     finished; still resumable
   .on-hold/YYYYMMDD.NN.slug/       paused; the banner says why and what resumes it
-  .on-hold/standing/<slug>/        a paused standing project (likewise under .shelved/)
+  .on-hold/00000000.00.standing.slug/   a paused standing project (likewise under .shelved/)
   .shelved/YYYYMMDD.NN.slug/       deferred indefinitely
   owners/<name>.md                 owner characters (optional)
 ```
@@ -26,7 +26,7 @@ The folder name defaults to `_projects` (the underscore sorts it first and marks
 - `sp.` marks a sub-project. Sub-projects share the day's sequence with ordinary projects.
 - `slug` is kebab-case: lowercase letters, digits, single hyphens.
 
-A standing project is `standing/<slug>`, with no date and no sequence: lowercase letters, digits, and hyphens. Its layout, with `units/` and `playbooks/`, is in [standing.md](standing.md).
+A standing project is `00000000.00.standing.<slug>`: a duty belongs to no single day, so its date is all zeros, which sorts it above every dated project, and `standing.` names what it is. The slug is kebab-case. Its layout, with `units/` and `playbooks/`, is in [standing.md](standing.md).
 
 ## Inside a project
 

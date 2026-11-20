@@ -42,9 +42,11 @@ Design notes that matter when changing this file:
   (Active when set, else Minutes) and written nowhere. A stored Minutes is
   never recomputed: older rows often hold net time, not end minus start.
 * A standing project is a duty that never completes. It lives at
-  `<state dir>/standing/<slug>/` (no date, no sequence), its `folder` is
-  `standing/<slug>`, and that is also how a Parent line and the command line
-  name it. The location decides that a project is standing; the brief's
+  `<state dir>/00000000.00.standing.<slug>/`, beside the dated projects: the
+  zero date sorts it above all of them, so a duty is never hidden one folder
+  down, and the prefix says what it is. That folder name is how a Parent line
+  and the command line name it; the command line also takes the bare slug.
+  The name decides that a project is standing; the brief's
   `**Kind:** standing` line tells a human reader. It has no progress: `list`
   reports its cadence, its last unit, and how many cycle days it is overdue.
 * Markdown templates are rendered with `string.Template` (`$var`), never
@@ -95,15 +97,17 @@ RESUME_FILE = "next.md"
 CLOCK_FILE = "clock.md"
 OWNERS_DIR = "owners"
 
-# Standing projects live in this folder inside each state folder:
-# `_projects/standing/<slug>/`, `_projects/.on-hold/standing/<slug>/`, and so
-# on. Never under `.completed/`: a duty is kept, paused, or stopped, never done.
-STANDING_DIR = "standing"
+# Standing projects sit beside the dated projects in each state folder, named
+# `00000000.00.standing.<slug>`: `_projects/00000000.00.standing.<slug>/`,
+# `_projects/.on-hold/00000000.00.standing.<slug>/`, and so on. The zero date
+# sorts them first. Never under `.completed/`: a duty is kept, paused, or
+# stopped, never done.
+STANDING_PREFIX = "00000000.00.standing."
 CADENCES = ("daily", "mon-sat", "weekdays", "weekly")
 
 FOLDER_NAME = re.compile(r"^(?P<date>\d{8})\.(?P<seq>\d{2})\.(?P<sp>sp\.)?(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$")
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-STANDING_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+STANDING_NAME = re.compile(r"^00000000\.00\.standing\.(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)$")
 
 # Marker blocks this CLI owns inside README.md and the resume file.
 ROE_START, ROE_END = "<!-- projects:roe:start -->", "<!-- projects:roe:end -->"
@@ -402,14 +406,15 @@ class Project:
 
     @property
     def is_standing(self) -> bool:
-        """A standing project lives in a `standing/` folder inside a state folder."""
-        return self.path.parent.name == STANDING_DIR and self.path.parent.parent == self.workspace.state_dir(self.state)
+        """A standing project's folder is named `00000000.00.standing.<slug>`."""
+        return bool(STANDING_NAME.match(self.path.name))
 
     @property
     def folder(self) -> str:
         """The name the CLI, Parent lines, and sub-project tables use:
-        `YYYYMMDD.NN.slug` for a project, `standing/<slug>` for a standing one."""
-        return f"{STANDING_DIR}/{self.path.name}" if self.is_standing else self.path.name
+        `YYYYMMDD.NN.slug` for a project, `00000000.00.standing.<slug>` for a
+        standing one. Always the folder's own name."""
+        return self.path.name
 
     @property
     def rel(self) -> str:
@@ -427,8 +432,8 @@ class Project:
 
     @property
     def slug(self) -> str:
-        parts = self.parts
-        return parts.group("slug") if parts else self.path.name
+        match = self.parts or STANDING_NAME.match(self.path.name)
+        return match.group("slug") if match else self.path.name
 
     @property
     def created(self) -> Optional[date]:
@@ -572,23 +577,18 @@ class Workspace:
             if not folder.is_dir():
                 continue
             for entry in sorted(folder.iterdir()):
-                if entry.is_dir() and FOLDER_NAME.match(entry.name):
+                if entry.is_dir() and (FOLDER_NAME.match(entry.name) or STANDING_NAME.match(entry.name)):
                     found.append(Project(self, state, entry))
-            standing = folder / STANDING_DIR
-            if standing.is_dir():
-                for entry in sorted(standing.iterdir()):
-                    if entry.is_dir() and STANDING_SLUG.match(entry.name):
-                        found.append(Project(self, state, entry))
         return found
 
     def find(self, folder: str) -> Optional[Project]:
         """Locate a project by folder name in any lifecycle state. A standing
-        project is found by `standing/<slug>` or by its bare slug."""
-        relative = folder
-        if not FOLDER_NAME.match(folder) and not folder.startswith(f"{STANDING_DIR}/"):
-            relative = f"{STANDING_DIR}/{folder}"
+        project is found by its folder name or by its bare slug."""
+        name = folder
+        if not FOLDER_NAME.match(folder) and not STANDING_NAME.match(folder):
+            name = STANDING_PREFIX + folder
         for state in STATES:
-            candidate = self.state_dir(state) / relative
+            candidate = self.state_dir(state) / name
             if candidate.is_dir():
                 return Project(self, state, candidate)
         return None
@@ -638,8 +638,8 @@ def render_rules_of_engagement(is_sub_project: bool, is_standing: bool = False) 
 
 def relative_link(source_dir: Path, target_dir: Path) -> str:
     """A relative markdown link from one project folder to another, ending in
-    a slash: `../20260908.01.foo/` beside it, `../../standing/show/` from a
-    standing project, `../standing/show/` to one."""
+    a slash: `../20260908.01.foo/` beside it, `../00000000.00.standing.show/`
+    to a standing project, `../.shelved/20260908.01.bar/` into a state folder."""
     return Path(os.path.relpath(target_dir, source_dir)).as_posix() + "/"
 
 
@@ -760,30 +760,30 @@ def _print_session_one_clock(project: "Project") -> None:
 
 
 def _new_standing(workspace: Workspace, args: argparse.Namespace) -> None:
-    """Create `_projects/standing/<slug>/`: a duty kept true, never completed.
+    """Create `_projects/00000000.00.standing.<slug>/`: a duty kept true, never completed.
     The same files as a project, from the standing templates, plus `units/`
     (one folder per kept cycle) and `playbooks/` (the routine)."""
     slug = args.standing
     if args.name:
         fail("give either --name (a project) or --standing (a standing project), not both")
-    if not STANDING_SLUG.match(slug):
-        fail(f"--standing must be lowercase letters, digits and hyphens, starting with a letter or digit: got '{slug}'")
+    if not SLUG.match(slug):
+        fail(f"--standing must be kebab-case (lowercase letters and digits, single hyphens): got '{slug}'")
     if not args.cadence:
         fail(f"--cadence is required for a standing project: one of {', '.join(CADENCES)}")
     if not args.duty:
         fail("--duty is required for a standing project: the condition kept true, in one or two sentences")
     if args.parent:
-        fail("a standing project cannot be a sub-project; its own sub-projects name it with --parent standing/<slug>")
+        fail("a standing project cannot be a sub-project; its own sub-projects name it with --parent <slug>")
     if args.done or args.goal:
         fail("a standing project has no goal or done-when list: it never completes. State the condition kept true with --duty, and one-time work with --setup")
     if args.owner and not SLUG.match(args.owner):
         fail(f"--owner must be kebab-case: got '{args.owner}'")
-    existing = workspace.find(f"{STANDING_DIR}/{slug}")
+    existing = workspace.find(STANDING_PREFIX + slug)
     if existing is not None:
         fail(f"a standing project with this name already exists: {existing.rel}")
 
     bootstrapped = workspace.ensure_projects_dir()
-    project_path = workspace.projects_dir / STANDING_DIR / slug
+    project_path = workspace.projects_dir / (STANDING_PREFIX + slug)
     project_path.mkdir(parents=True)
     for name in ("plans", "changelogs", "units", "playbooks"):
         (project_path / name).mkdir()
@@ -984,10 +984,6 @@ def cmd_move(args: argparse.Namespace) -> None:
     shutil.move(str(old_abs), str(new_abs))
     for edit in edits:
         edit.path.write_text(edit.after, encoding="utf-8")
-    # A `standing/` folder left empty by the move goes too; `new` and the next
-    # move recreate it when needed.
-    if project.is_standing and old_abs.parent.is_dir() and not any(old_abs.parent.iterdir()):
-        old_abs.parent.rmdir()
     print(f"done: {project.folder} is now {STATUS_WORDS[args.to].lower()}")
 
 
@@ -1367,7 +1363,7 @@ def cmd_clock(args: argparse.Namespace) -> None:
     if action not in CLOCK_ACTIONS:
         fail(f"clock takes start, add or show before the folder: got '{action}'")
     if not _is_folder_name(folder):
-        fail(f"give the bare folder name (or standing/<slug>), not a path: '{folder}'")
+        fail(f"give the bare folder name (or a standing project's slug), not a path: '{folder}'")
     project = workspace.find(folder)
     if project is None:
         fail(f"project not found in any state: {folder}")
@@ -1621,9 +1617,11 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
 
         run("new", "--standing", "show", "--cadence", "daily", "--description", "A daily show.",
             "--duty", "An episode is out every day.", "--setup", "rig,prompter,channel")
-        show = ws.find("standing/show")
-        check(show is not None and show.path == ws.projects_dir / STANDING_DIR / "show", "standing project created at standing/<slug>/")
-        check(show.is_standing and show.folder == "standing/show" and show.slug == "show", "standing identity: folder standing/show")
+        show = ws.find("00000000.00.standing.show")
+        check(show is not None and show.path == ws.projects_dir / "00000000.00.standing.show", "standing project created at 00000000.00.standing.<slug>/")
+        check(show.is_standing and show.folder == "00000000.00.standing.show" and show.slug == "show", "standing identity: folder 00000000.00.standing.show, slug show")
+        check(sorted(p.name for p in ws.projects_dir.iterdir() if p.is_dir() and not p.name.startswith("."))[0] == "00000000.00.standing.show",
+              "a standing project sorts above every dated project")
         check(ws.find("show") is not None and ws.find("show").path == show.path, "a standing project is found by its bare slug too")
         check((show.path / "units").is_dir() and (show.path / "playbooks").is_dir(), "units/ and playbooks/ created")
         brief = read_text(show.readme) or ""
@@ -1652,27 +1650,27 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
             (unit / "log.md").write_text(f"# {day.isoformat()}\n", encoding="utf-8")
         check(show.last_unit() == (three_ago.isoformat(), three_ago), "last unit is the newest unit folder")
         listing = json.loads(capture("list", "--json"))
-        row = next(r for r in listing["projects"] if r["folder"] == "standing/show")
+        row = next(r for r in listing["projects"] if r["folder"] == "00000000.00.standing.show")
         check(row["kind"] == "standing" and row["cadence"] == "daily" and row["overdue_days"] == 2 and row["progress_percent"] is None,
               "list --json: standing, daily, overdue 2, no progress")
         check(row["setup_ticked"] == 0 and row["setup_total"] == 3 and row["idle_days"] == 3, "list --json: setup 0/3, idle from the last unit")
 
         # A standing project never completes.
-        check(refused("move", "standing/show", "--to", "completed"), "move --to completed is refused for a standing project")
-        check(ws.find("standing/show").state == "active", "the refused move changed nothing")
+        check(refused("move", "show", "--to", "completed"), "move --to completed is refused for a standing project")
+        check(ws.find("00000000.00.standing.show").state == "active", "the refused move changed nothing")
 
         # Sub-projects of a standing project stay dated folders at the top level, and nest at any depth.
-        run("new", "--name", "edit-tools", "--description", "Tools for the edit.", "--goal", "Faster edits.", "--parent", "standing/show")
+        run("new", "--name", "edit-tools", "--description", "Tools for the edit.", "--goal", "Faster edits.", "--parent", "show")
         sub_project = only("edit-tools")
-        check(sub_project.parent_folder == "standing/show", "sub-project names standing/show as its parent")
-        check("[standing/show](../standing/show/)" in (read_text(sub_project.readme) or ""), "the Parent line links to the standing project")
-        check(f"[{sub_project.folder}](../../{sub_project.folder}/)" in (read_text(show.readme) or ""), "the standing project's table links down to the sub-project")
+        check(sub_project.parent_folder == "00000000.00.standing.show", "sub-project names the standing folder as its parent")
+        check("[00000000.00.standing.show](../00000000.00.standing.show/)" in (read_text(sub_project.readme) or ""), "the Parent line links to the standing project")
+        check(f"[{sub_project.folder}](../{sub_project.folder}/)" in (read_text(show.readme) or ""), "the standing project's table links down to the sub-project")
         run("new", "--name", "clip-cutter", "--description", "One tool.", "--goal", "Cut clips.", "--parent", sub_project.folder)
         sub_sub = only("clip-cutter")
         check(sub_sub.parent_folder == sub_project.folder, "a sub-project of a sub-project links to its parent")
         check(links_resolve(show) and links_resolve(sub_project) and links_resolve(sub_sub), "standing and sub-project links resolve")
         lines = capture("list").splitlines()
-        show_line = next((i for i, line in enumerate(lines) if line.startswith("standing/show ")), -1)
+        show_line = next((i for i, line in enumerate(lines) if line.startswith("00000000.00.standing.show ")), -1)
         check(show_line != -1 and "standing · daily · last unit" in lines[show_line] and "overdue 2 d · setup 0/3" in lines[show_line],
               "list prints the standing line with cadence, last unit, overdue and setup")
         check(show_line == 2, "standing projects are listed first")
@@ -1680,22 +1678,21 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         check(lines[show_line + 2].startswith(f"    {sub_sub.folder} "), "a sub-project of a sub-project nests one level more")
         check(any(line.startswith(f"  {child.folder} ") for line in lines), "an ordinary sub-project still nests under its parent")
 
-        # Shelving a standing project moves it to .shelved/standing/<slug>/ and repairs every link.
+        # Shelving a standing project moves it to .shelved/00000000.00.standing.<slug>/ and repairs every link.
         before_shelve = {p: read_text(p) for p in ws.projects_dir.rglob("*") if p.is_file()}
-        check(refused("move", "standing/show", "--to", "shelved", "--reason", "Pause."), "shelving is refused while sub-projects are active")
+        check(refused("move", "show", "--to", "shelved", "--reason", "Pause."), "shelving is refused while sub-projects are active")
         run("move", sub_sub.folder, "--to", "on-hold", "--reason", "Parent paused.", "--resume-when", "Show resumes.")
         run("move", sub_project.folder, "--to", "on-hold", "--reason", "Parent paused.", "--resume-when", "Show resumes.")
-        run("move", "standing/show", "--to", "shelved", "--reason", "Testing a pause.")
-        shelved = ws.find("standing/show")
-        check(shelved.state == "shelved" and shelved.path == ws.state_dir("shelved") / STANDING_DIR / "show", "shelved to .shelved/standing/show/")
-        check(not (ws.projects_dir / STANDING_DIR).exists(), "the emptied standing/ folder is removed")
+        run("move", "show", "--to", "shelved", "--reason", "Testing a pause.")
+        shelved = ws.find("show")
+        check(shelved.state == "shelved" and shelved.path == ws.state_dir("shelved") / "00000000.00.standing.show", "shelved to .shelved/00000000.00.standing.show/")
         check("Status: Shelved" in (read_text(shelved.readme) or ""), "shelved banner written")
         held_sub = ws.find(sub_project.folder)
         check(links_resolve(shelved) and links_resolve(held_sub) and links_resolve(ws.find(sub_sub.folder)), "links resolve after shelving")
         check(f"`{shelved.rel}/README.md`" in (read_text(held_sub.resume_file) or ""), "the sub-project's parent paths point at the shelved folder")
         listing = json.loads(capture("list", "--all", "--json"))
-        check(any(r["folder"] == "standing/show" and r["state"] == "shelved" for r in listing["projects"]), "list --all shows the shelved standing project")
-        run("move", "standing/show", "--to", "active")
+        check(any(r["folder"] == "00000000.00.standing.show" and r["state"] == "shelved" for r in listing["projects"]), "list --all shows the shelved standing project")
+        run("move", "00000000.00.standing.show", "--to", "active")
         run("move", sub_project.folder, "--to", "active")
         run("move", sub_sub.folder, "--to", "active")
         after_restore = {p: read_text(p) for p in ws.projects_dir.rglob("*") if p.is_file()}
@@ -1703,7 +1700,7 @@ def cmd_selftest(_args: argparse.Namespace) -> None:
         check(not differences, f"standing round trip restores every byte; differs: {sorted(str(p) for p in differences)[:3]}")
 
         # refresh writes the standing rules into standing projects and the normal rules into the rest.
-        show = ws.find("standing/show")
+        show = ws.find("00000000.00.standing.show")
         show.resume_file.write_text((read_text(show.resume_file) or "").replace("### Step 3: Present the duty as the owner", "### Step 3: Edited"), encoding="utf-8")
         run("refresh", "--all")
         standing_next, normal_next = read_text(show.resume_file) or "", read_text(only("foo").resume_file) or ""
@@ -1801,7 +1798,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     new = sub.add_parser("new", parents=[common], help="create a project, a sub-project (--parent), or a standing project (--standing)")
     new.add_argument("--name", help="kebab-case slug; the date and sequence prefix are added")
-    new.add_argument("--standing", metavar="SLUG", help="create a standing project at standing/<slug>/: a duty that never completes")
+    new.add_argument("--standing", metavar="SLUG", help="create a standing project at 00000000.00.standing.<slug>/: a duty that never completes")
     new.add_argument("--description", required=True, help="one or two sentences")
     new.add_argument("--goal", help="what done looks like at the highest level (required for a project)")
     new.add_argument("--done", help="comma-separated definition-of-done items")
@@ -1812,11 +1809,11 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--scope", help="what is in and out, free text or bullets")
     new.add_argument("--repos", help="comma-separated workspace folder names of the repositories touched (default: this repository)")
     new.add_argument("--owner", help="named owner; creates owners/<name>.md from the starter if missing")
-    new.add_argument("--parent", help="parent project folder (or standing/<slug>); makes this a sub-project")
+    new.add_argument("--parent", help="parent project folder (or a standing project's slug); makes this a sub-project")
     new.set_defaults(func=cmd_new)
 
     move = sub.add_parser("move", parents=[common], help="move a project between lifecycle states and repair every reference (a standing project never completes)")
-    move.add_argument("folder", help="project folder name, or standing/<slug> (not a path)")
+    move.add_argument("folder", help="project folder name, or a standing project's slug (not a path)")
     move.add_argument("--to", required=True, choices=list(STATES.keys()))
     move.add_argument("--reason", help="why (required for on-hold and shelved)")
     move.add_argument("--resume-when", help="what has to happen before it resumes (required for on-hold)")
@@ -1832,7 +1829,7 @@ def build_parser() -> argparse.ArgumentParser:
     listing.set_defaults(func=cmd_list)
 
     refresh = sub.add_parser("refresh", parents=[common], help="re-sync the rules of engagement block from the skill's template")
-    refresh.add_argument("folder", nargs="?", help="project folder name, or standing/<slug>")
+    refresh.add_argument("folder", nargs="?", help="project folder name, or a standing project's slug")
     refresh.add_argument("--all", action="store_true", help="every active project")
     refresh.set_defaults(func=cmd_refresh)
 
@@ -1840,7 +1837,7 @@ def build_parser() -> argparse.ArgumentParser:
         "clock", parents=[common],
         help="the work clock: `clock start <folder>` prints the start stamp, `clock add <folder>` appends the sitting at wrap-up, `clock <folder>` shows the totals",
     )
-    clock.add_argument("words", nargs="+", metavar="[start|add|show] folder", help="an action, then the project folder (or standing/<slug>); no action means show")
+    clock.add_argument("words", nargs="+", metavar="[start|add|show] folder", help="an action, then the project folder (or a standing project's slug); no action means show")
     clock.add_argument("--at", help="start only: the start stamp instead of now, such as 2026-11-14 08:12+05:30")
     clock.add_argument("--start", help="add only: the stamp `clock start` printed")
     clock.add_argument("--end", help="add only: the end stamp (default: now)")
@@ -1860,16 +1857,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     for name in ("folder", "parent"):
         value = getattr(args, name, None)
         if value and not _is_folder_name(value):
-            fail(f"give the bare folder name (or standing/<slug>), not a path: '{value}'")
+            fail(f"give the bare folder name (or a standing project's slug), not a path: '{value}'")
     args.func(args)
 
 
 def _is_folder_name(value: str) -> bool:
     """A project folder name as the CLI accepts it: `YYYYMMDD.NN[.sp].slug`,
-    `standing/<slug>`, or a standing project's bare slug. Never a path."""
-    if value.startswith(f"{STANDING_DIR}/"):
-        return bool(STANDING_SLUG.match(value[len(STANDING_DIR) + 1:]))
-    return "/" not in value and not value.startswith(".")
+    `00000000.00.standing.<slug>`, or a standing project's bare slug. Never a path."""
+    return "/" not in value and "\\" not in value and not value.startswith(".")
 
 
 if __name__ == "__main__":

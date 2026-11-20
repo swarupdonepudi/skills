@@ -9,7 +9,7 @@ Four states, one command, every move reversible.
 | on-hold | `_projects/.on-hold/` | paused with a written reason and resume condition |
 | shelved | `_projects/.shelved/` | deferred indefinitely; may never resume |
 
-A standing project lives in a `standing/` folder inside the state folder (`_projects/standing/<slug>/`, `_projects/.on-hold/standing/<slug>/`, `_projects/.shelved/standing/<slug>/`) and is moved by `move standing/<slug> ...`. It is never completed: `move --to completed` refuses, because a duty is kept, paused, or stopped, never done. See [standing.md](standing.md).
+A standing project keeps its folder name, `00000000.00.standing.<slug>`, in every state folder (`_projects/`, `_projects/.on-hold/`, `_projects/.shelved/`) and is moved by `move <slug> ...` or by its folder name. It is never completed: `move --to completed` refuses, because a duty is kept, paused, or stopped, never done. See [standing.md](standing.md).
 
 ```bash
 python3 <skill>/scripts/projects.py move <folder> --to completed
